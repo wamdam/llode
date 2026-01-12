@@ -735,19 +735,45 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
         return error_msg
 
 
-def fetch_available_models(base_url: str, api_key: str) -> List[Dict]:
-    """Fetch available models from the API."""
+def fetch_available_models(base_url: str, api_key: str) -> List[Dict[str, str]]:
+    """Fetch available models from the API /models endpoint."""
     try:
-        response = requests.get(
-            f"{base_url}/models",
-            headers={"Authorization": f"Bearer {api_key}"},
-            timeout=10
-        )
+        # Construct the models endpoint URL
+        # Remove /v1 suffix if present and add /models
+        api_base = base_url.rstrip('/').replace('/v1', '')
+        models_url = f"{api_base}/models"
+        
+        # Make the API request
+        headers = {
+            "accept": "application/json",
+            "Authorization": f"Bearer {api_key}"
+        }
+        
+        response = requests.get(models_url, headers=headers, timeout=10)
         response.raise_for_status()
+        
+        # Parse the response
         data = response.json()
-        return data.get('data', [])
+        
+        # Extract model information from the data array
+        if "data" in data and isinstance(data["data"], list):
+            models = []
+            for model in data["data"]:
+                if "id" in model:
+                    models.append({
+                        "id": model["id"],
+                        "owned_by": model.get("owned_by", "unknown"),
+                        "created": model.get("created", 0)
+                    })
+            if models:
+                return models
+        
+        # Return empty list if response format is unexpected
+        return []
+        
     except Exception as e:
-        print(f"Error fetching models: {e}")
+        # Return empty list if API call fails
+        print(f"Warning: Failed to fetch models from API ({str(e)})")
         return []
 
 
@@ -963,14 +989,49 @@ def main():
 [bold]Available commands:[/bold]
   /help      - Show this help
   /clear     - Clear conversation history
-  /model     - Show current model
+  /model     - Change model
   /plan      - Toggle planning mode (disables file editing)
   /multiline - Enter multiline input mode
   /quit      - Exit the assistant
 """)
                     continue
                 elif cmd == 'model':
-                    console.print(f"\n[green]Current model: {current_model}[/green]\n")
+                    console.print("\n[bold]Fetching available models...[/bold]")
+                    models = fetch_available_models(args.base_url, args.api_key)
+                    
+                    if models:
+                        console.print(f"\n[bold]Available models ({len(models)}):[/bold]")
+                        for i, model in enumerate(models, 1):
+                            owner = model.get('owned_by', 'unknown')
+                            marker = " [cyan](current)[/cyan]" if model['id'] == current_model else ""
+                            console.print(f"  {i}. {model['id']}{marker}")
+                        
+                        console.print("\nEnter model number or name (or press Enter to cancel): ", end="")
+                        choice = input().strip()
+                        
+                        if choice:
+                            # Try as number first
+                            if choice.isdigit():
+                                idx = int(choice) - 1
+                                if 0 <= idx < len(models):
+                                    current_model = models[idx]['id']
+                                    console.print(f"[green]Model changed to: {current_model}[/green]\n")
+                                else:
+                                    console.print("[red]Invalid model number[/red]\n")
+                            # Try as model name
+                            elif any(m['id'] == choice for m in models):
+                                current_model = choice
+                                console.print(f"[green]Model changed to: {current_model}[/green]\n")
+                            else:
+                                console.print("[red]Model not found. Using entered name anyway.[/red]")
+                                current_model = choice
+                                console.print(f"[yellow]Model changed to: {current_model}[/yellow]\n")
+                    else:
+                        console.print("[yellow]Could not fetch models from API. Enter model name manually:[/yellow] ", end="")
+                        new_model = input().strip()
+                        if new_model:
+                            current_model = new_model
+                            console.print(f"[green]Model changed to: {current_model}[/green]\n")
                     continue
                 elif cmd == 'plan':
                     planning_mode = not planning_mode
