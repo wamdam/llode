@@ -178,6 +178,31 @@ COMMON MISTAKES:
 # Initialize tool registry and git root
 tools = ToolRegistry()
 GIT_ROOT = find_git_root()
+LOG_FILE = GIT_ROOT / "LLODE_LOG.md"
+
+
+def log_conversation(role: str, content: str) -> None:
+    """Log a conversation message to LLODE_LOG.md"""
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"\n---\n\n")
+        f.write(f"**{role.upper()}** ({timestamp})\n\n")
+        f.write(f"{content}\n")
+
+
+def log_session_start() -> None:
+    """Log the start of a new session"""
+    from datetime import datetime
+    
+    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    with open(LOG_FILE, "a", encoding="utf-8") as f:
+        f.write(f"\n\n{'='*80}\n")
+        f.write(f"# NEW SESSION - {timestamp}\n")
+        f.write(f"{'='*80}\n")
 
 
 def is_dotfile(path: Path) -> bool:
@@ -949,6 +974,9 @@ def main():
     console.print(f"Model: [cyan]{args.model}[/cyan]")
     console.print(f"Type [bold]/help[/bold] for commands, [bold]/quit[/bold] to exit\n")
     
+    # Log session start
+    log_session_start()
+    
     planning_mode = False
     system_prompt = tools.get_system_prompt(planning_mode)
     messages = []
@@ -1038,6 +1066,9 @@ def main():
                     console.print(f"[red]Unknown command: /{cmd}[/red]\n")
                     continue
             
+            # Log user message
+            log_conversation("user", user_input)
+            
             # Add user message
             messages.append({"role": "user", "content": user_input})
             
@@ -1057,6 +1088,9 @@ def main():
                     console,
                     planning_mode
                 )
+                
+                # Log assistant response
+                log_conversation("assistant", assistant_response)
                 
                 # Add assistant response to history
                 messages.append({"role": "assistant", "content": assistant_response})
