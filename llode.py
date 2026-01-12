@@ -10,6 +10,8 @@ import re
 import json
 import argparse
 import readline
+import shutil
+import subprocess
 from pathlib import Path
 from typing import List, Dict, Callable, Optional, Tuple
 from dotenv import load_dotenv
@@ -75,10 +77,22 @@ class ToolRegistry:
 The edit_file tool is DISABLED. Focus on planning and analysis.
 
 """
+        
+        document_workflow = """
+DOCUMENT CONVERSION WORKFLOW:
+
+For non-plaintext documents (docx, odt, rtf, html, epub, pdf):
+1. Use convert_to_markdown(path="document.docx") to create document.docx.md
+2. Use read_file or edit_file on the .md version
+3. Optionally use convert_from_markdown to convert back to original format
+
+The system will automatically suggest conversion when you try to read binary files.
+
+"""
 
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
-IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
@@ -235,6 +249,11 @@ def log_session_start() -> None:
         f.write(f"{'='*80}\n")
 
 
+def check_pandoc_installed() -> bool:
+    """Check if pandoc is installed and available in PATH."""
+    return shutil.which("pandoc") is not None
+
+
 def is_dotfile(path: Path) -> bool:
     """Check if path or any of its parents is a dotfile."""
     for part in path.parts:
@@ -321,7 +340,26 @@ def read_file(path: str) -> str:
     file_path = validate_path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
-    return file_path.read_text()
+    
+    # Check if this is a binary document format
+    binary_extensions = ['.docx', '.odt', '.rtf', '.doc', '.epub', '.pdf']
+    if file_path.suffix.lower() in binary_extensions:
+        return (
+            f"⚠️  Cannot read binary document format: {file_path.suffix}\n\n"
+            f"This appears to be a {file_path.suffix.upper()} file. "
+            f"Use convert_to_markdown tool first:\n\n"
+            f"  convert_to_markdown(path=\"{path}\")\n\n"
+            f"This will create a markdown version that you can read and edit."
+        )
+    
+    try:
+        return file_path.read_text()
+    except UnicodeDecodeError:
+        return (
+            f"⚠️  Cannot read file as text: {path}\n\n"
+            f"This file appears to be binary or uses an unsupported encoding.\n"
+            f"If this is a document file, try using convert_to_markdown."
+        )
 
 
 @tools.register("edit_file", """Edits a file by replacing old_str with new_str.
@@ -461,6 +499,150 @@ def todo_write(content: str) -> str:
     json.loads(content)  # Validate JSON
     (GIT_ROOT / "LLODE_TODO.json").write_text(content)
     return "Todo list updated successfully"
+
+
+@tools.register("convert_to_markdown", """Converts a document to markdown format using pandoc.
+
+Parameters:
+- path: relative path to the document file
+
+Converts documents (docx, odt, rtf, html, epub, etc.) to markdown.
+Creates a new file with .md extension (e.g., document.docx -> document.docx.md).
+Returns the path to the generated markdown file.
+
+Requires pandoc to be installed. If pandoc is not available, returns an error message.""")
+def convert_to_markdown(path: str) -> str:
+    """Convert a document to markdown using pandoc."""
+    if not check_pandoc_installed():
+        return (
+            "❌ Error: pandoc is not installed.\n\n"
+            "To install pandoc:\n"
+            "  - macOS: brew install pandoc\n"
+            "  - Ubuntu/Debian: sudo apt-get install pandoc\n"
+            "  - Windows: Download from https://pandoc.org/installing.html\n"
+            "  - Other: See https://pandoc.org/installing.html"
+        )
+    
+    file_path = validate_path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    
+    # Generate output path
+    output_path = file_path.parent / f"{file_path.name}.md"
+    
+    # Check if output already exists
+    if output_path.exists():
+        return (
+            f"⚠️  Markdown file already exists: {output_path.relative_to(GIT_ROOT)}\n"
+            f"Use read_file to view it, or delete it first if you want to reconvert."
+        )
+    
+    try:
+        # Run pandoc conversion
+        result = subprocess.run(
+            ["pandoc", str(file_path), "-o", str(output_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or "Unknown error"
+            return f"❌ Pandoc conversion failed:\n{error_msg}"
+        
+        # Get size info
+        original_size = file_path.stat().st_size
+        markdown_size = output_path.stat().st_size
+        
+        rel_output = output_path.relative_to(GIT_ROOT)
+        return (
+            f"✓ Successfully converted to markdown:\n"
+            f"  Input:  {path} ({original_size:,} bytes)\n"
+            f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
+            f"You can now use read_file or edit_file on: {rel_output}"
+        )
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Error: Pandoc conversion timed out after 30 seconds"
+    except Exception as e:
+        return f"❌ Error during conversion: {str(e)}"
+
+
+@tools.register("convert_from_markdown", """Converts a markdown file back to another format using pandoc.
+
+Parameters:
+- path: relative path to the markdown file
+- output_format: target format (docx, odt, rtf, html, epub, pdf, etc.)
+
+Converts the markdown file to the specified format.
+Creates output file by replacing .md extension with target format extension.
+Returns the path to the generated file.
+
+Requires pandoc to be installed.""")
+def convert_from_markdown(path: str, output_format: str) -> str:
+    """Convert a markdown file to another format using pandoc."""
+    if not check_pandoc_installed():
+        return (
+            "❌ Error: pandoc is not installed.\n\n"
+            "To install pandoc:\n"
+            "  - macOS: brew install pandoc\n"
+            "  - Ubuntu/Debian: sudo apt-get install pandoc\n"
+            "  - Windows: Download from https://pandoc.org/installing.html\n"
+            "  - Other: See https://pandoc.org/installing.html"
+        )
+    
+    file_path = validate_path(path)
+    if not file_path.exists():
+        raise FileNotFoundError(f"File not found: {path}")
+    
+    # Validate format
+    valid_formats = ['docx', 'odt', 'rtf', 'html', 'epub', 'pdf', 'rst', 'latex', 'tex']
+    if output_format.lower() not in valid_formats:
+        return f"❌ Unsupported format: {output_format}\nSupported: {', '.join(valid_formats)}"
+    
+    # Generate output path
+    # If path ends with .docx.md, output should be .docx
+    # Otherwise, replace .md with the target extension
+    if file_path.suffix == '.md':
+        stem = file_path.stem
+        # Check if stem ends with a document extension
+        for ext in ['.docx', '.odt', '.rtf', '.html', '.epub']:
+            if stem.endswith(ext):
+                output_path = file_path.parent / stem
+                break
+        else:
+            output_path = file_path.parent / f"{stem}.{output_format.lower()}"
+    else:
+        return f"❌ Input file must be a markdown file (.md): {path}"
+    
+    try:
+        # Run pandoc conversion
+        result = subprocess.run(
+            ["pandoc", str(file_path), "-o", str(output_path)],
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or "Unknown error"
+            return f"❌ Pandoc conversion failed:\n{error_msg}"
+        
+        # Get size info
+        markdown_size = file_path.stat().st_size
+        output_size = output_path.stat().st_size
+        
+        rel_output = output_path.relative_to(GIT_ROOT)
+        return (
+            f"✓ Successfully converted from markdown:\n"
+            f"  Input:  {path} ({markdown_size:,} bytes)\n"
+            f"  Output: {rel_output} ({output_size:,} bytes)\n"
+        )
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Error: Pandoc conversion timed out after 30 seconds"
+    except Exception as e:
+        return f"❌ Error during conversion: {str(e)}"
 
 
 class MIMEToolCallParser:

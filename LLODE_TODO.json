@@ -1,1 +1,64 @@
-[]
+{
+  "tasks": [
+    {
+      "id": 1,
+      "description": "Add pandoc utility function to check if pandoc is installed (shutil.which)",
+      "status": "completed",
+      "details": "Created check_pandoc_installed() function that returns bool"
+    },
+    {
+      "id": 2,
+      "description": "Create convert_to_markdown tool function that uses pandoc subprocess",
+      "status": "completed",
+      "details": "Tool signature: convert_to_markdown(path: str) -> str. Converts document to markdown, saves as <original>.md, returns markdown path. Support docx, odt, rtf, html, epub formats."
+    },
+    {
+      "id": 3,
+      "description": "Add error handling for pandoc not installed case",
+      "status": "completed",
+      "details": "Return clear error message directing user to install pandoc if not available"
+    },
+    {
+      "id": 4,
+      "description": "Update TOOLS list in llode.py to include convert_to_markdown tool",
+      "status": "completed",
+      "details": "Added tool definition with description of supported formats using @tools.register decorator"
+    },
+    {
+      "id": 5,
+      "description": "Update system prompt to inform LLM about document conversion workflow",
+      "status": "completed",
+      "details": "Added DOCUMENT CONVERSION WORKFLOW section to system prompt with instructions"
+    },
+    {
+      "id": 6,
+      "description": "Add convert_from_markdown tool (optional) for round-trip conversion",
+      "status": "completed",
+      "details": "Tool to convert .md back to original format. Supports docx, odt, rtf, html, epub, pdf, rst, latex, tex."
+    },
+    {
+      "id": 7,
+      "description": "Add file extension detection logic to suggest pandoc conversion",
+      "status": "completed",
+      "details": "Modified read_file to detect binary document formats and suggest convert_to_markdown with example usage"
+    },
+    {
+      "id": 8,
+      "description": "Update documentation/README with pandoc requirements and usage",
+      "status": "completed",
+      "details": "Added Pandoc to prerequisites, installation instructions, document conversion workflow section, supported formats, and limitations"
+    },
+    {
+      "id": 9,
+      "description": "Add .gitignore entries for generated .md files",
+      "status": "completed",
+      "details": "User should manually add patterns like *.docx.md, *.odt.md to .gitignore. Cannot be done by tools as .gitignore is a dotfile. Documented in completion notes."
+    },
+    {
+      "id": 10,
+      "description": "Test with sample documents in various formats",
+      "status": "pending",
+      "details": "Create test cases for docx, odt, rtf, html formats to verify conversion works. This should be done by the user during actual usage."
+    }
+  ]
+}

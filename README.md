@@ -14,6 +14,7 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 - **Read Files**: View file contents with automatic gitignore respect
 - **Edit Files**: AI can modify files with precise search-and-replace operations
 - **Create Files**: Generate new files from scratch
+- **Document Conversion**: Convert between document formats (docx, odt, rtf, html, epub, pdf) and markdown using Pandoc
 
 ### 🔍 Code Search
 - Full-text search across your entire codebase
@@ -42,6 +43,7 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 ### Prerequisites
 - Python 3.7 or higher
 - API key (mammouth AI or others)
+- **Pandoc** (optional, for document conversion support)
 
 ### Setup
 
@@ -64,6 +66,18 @@ export OPENAI_API_KEY='your-api-key-here'
 Or create a `.env` file (not recommended for security):
 ```
 OPENAI_API_KEY=your-api-key-here
+```
+
+4. **(Optional)** Install Pandoc for document conversion:
+```bash
+# macOS
+brew install pandoc
+
+# Ubuntu/Debian
+sudo apt-get install pandoc
+
+# Windows
+# Download from https://pandoc.org/installing.html
 ```
 
 ## Usage
@@ -99,16 +113,20 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 
 1. **File System Tools**
    - `list_files`: Browse project structure
-   - `read_file`: Read file contents
+   - `read_file`: Read file contents (with binary format detection)
    - `edit_file`: Modify files with exact string matching
 
-2. **Search Tools**
+2. **Document Conversion Tools** (requires Pandoc)
+   - `convert_to_markdown`: Convert documents (docx, odt, rtf, html, epub, pdf) to markdown
+   - `convert_from_markdown`: Convert markdown back to various formats
+
+3. **Search Tools**
    - `search_codebase`: Full-text search with context
 
-3. **Web Tools**
+4. **Web Tools**
    - `fetch_url`: Retrieve content from URLs
 
-4. **Task Management Tools**
+5. **Task Management Tools**
    - `todo_read`: View current task list
    - `todo_write`: Update task list
 
@@ -161,6 +179,33 @@ The AI assistant can:
 - Follow coding patterns in your codebase
 - Suggest improvements based on best practices
 
+### Document Conversion Workflow
+
+Working with documents (requires Pandoc):
+
+1. **Convert to Markdown**: The AI will automatically suggest conversion when you try to read binary document formats
+   ```
+   You: Read the report.docx file
+   AI: [Suggests using convert_to_markdown]
+   AI: [Converts report.docx → report.docx.md]
+   ```
+
+2. **Edit the Markdown**: Work with the markdown version using standard editing tools
+   ```
+   You: Update the introduction section in the report
+   AI: [Edits report.docx.md]
+   ```
+
+3. **Convert Back** (optional): Convert the markdown back to the original format
+   ```
+   You: Convert the markdown back to docx
+   AI: [Converts report.docx.md → report.docx]
+   ```
+
+**Supported Formats**:
+- Input: docx, odt, rtf, html, epub, pdf, and more
+- Output: docx, odt, rtf, html, epub, pdf, rst, latex, tex
+
 ## Security Considerations
 
 - **API Key**: Store your Anthropic API key securely using environment variables
@@ -174,6 +219,8 @@ The AI assistant can:
 - Token budget limits conversation length (automatically managed)
 - File edits require exact string matching
 - Cannot execute code directly (file operations only)
+- Document conversion requires Pandoc to be installed (optional feature)
+- Binary files cannot be directly edited (must be converted to markdown first)
 
 ## Contributing
 
