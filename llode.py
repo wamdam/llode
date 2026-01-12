@@ -860,8 +860,7 @@ def stream_response(
                         live.start()
                     else:
                         display_buffer += text
-                        if display_buffer.strip():
-                            live.update(Markdown(display_buffer))
+                        live.update(Markdown(display_buffer))
                 
             except json.JSONDecodeError:
                 continue
