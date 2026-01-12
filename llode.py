@@ -713,14 +713,35 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
             console.print(f"[red]{result}[/red]\n")
             return result
         
-        console.print(f"\n[bold cyan]🔧 Executing tool: {tool_name}[/bold cyan]")
+        # Build a descriptive status message
+        status_msg = f"🔧 {tool_name}"
+        if tool_name == "read_file" and "path" in tool_args:
+            status_msg += f" → {tool_args['path']}"
+        elif tool_name == "edit_file" and "path" in tool_args:
+            status_msg += f" → {tool_args['path']}"
+        elif tool_name == "search_codebase" and "search_term" in tool_args:
+            status_msg += f" → '{tool_args['search_term']}'"
+        elif tool_name == "fetch_url" and "url" in tool_args:
+            status_msg += f" → {tool_args['url'][:50]}..."
+        
+        console.print(f"\n[bold cyan]{status_msg}[/bold cyan]", end="")
         
         if tool_name not in tools.tools:
             result = f"❌ Unknown tool: {tool_name}"
-            console.print(f"[red]{result}[/red]\n")
+            console.print(f"\r[red]{result}[/red]\n")
             return result
         
+        # Show brief status during execution
+        console.print(" [dim](running...)[/dim]", end="", flush=True)
+        
         result = tools.tools[tool_name](**tool_args)
+        
+        # Clear the status line
+        console.print(f"\r{' ' * (len(status_msg) + 20)}\r", end="")
+        
+        # Show completion
+        console.print(f"[green]✓[/green] [cyan]{status_msg}[/cyan]")
+        
         display_output = format_tool_output_for_display(tool_name, result, tool_args)
         
         console.print(Markdown(display_output))
@@ -730,7 +751,7 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
         
     except Exception as e:
         error_msg = f"❌ Tool execution error: {str(e)}"
-        console.print(f"[red]{error_msg}[/red]\n")
+        console.print(f"\r[red]{error_msg}[/red]\n")
         console.print(f"[dim]{tool_content[:500]}...[/dim]\n" if len(tool_content) > 500 else f"[dim]{tool_content}[/dim]\n")
         return error_msg
 
@@ -817,6 +838,10 @@ def stream_response(
     tool_outputs = []
     parser = MIMEToolCallParser()
     display_buffer = ""
+    first_content_received = False
+    
+    # Show initial "waiting" indicator
+    console.print("[dim]⏳ Waiting for response...[/dim]", end="")
     
     response = requests.post(url, headers=headers, json=data, stream=True)
     response.raise_for_status()
@@ -840,6 +865,11 @@ def stream_response(
                 
                 if not content:
                     continue
+                
+                # Clear the waiting indicator on first content
+                if not first_content_received:
+                    console.print("\r" + " " * 40 + "\r", end="")  # Clear the line
+                    first_content_received = True
                 
                 full_response += content
                 
