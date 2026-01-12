@@ -501,33 +501,26 @@ def todo_write(content: str) -> str:
     return "Todo list updated successfully"
 
 
-@tools.register("convert_to_markdown", """Converts a document to markdown format using pandoc.
+@tools.register("convert_to_markdown", """Converts a document to markdown format using pandoc or pdftotext.
 
 Parameters:
 - path: relative path to the document file
 
-Converts documents (docx, odt, rtf, html, epub, etc.) to markdown.
-Creates a new file with .md extension (e.g., document.docx -> document.docx.md).
+Converts documents to markdown:
+- PDF files: Uses pdftotext (from poppler-utils) to extract text
+- Other formats (docx, odt, rtf, html, epub, etc.): Uses pandoc
+
+Creates a new file with .md extension (e.g., document.pdf -> document.pdf.md).
 Returns the path to the generated markdown file.
 
-Requires pandoc to be installed. If pandoc is not available, returns an error message.""")
+Requires pandoc for non-PDF files, and pdftotext for PDF files.""")
 def convert_to_markdown(path: str) -> str:
-    """Convert a document to markdown using pandoc."""
-    if not check_pandoc_installed():
-        return (
-            "❌ Error: pandoc is not installed.\n\n"
-            "To install pandoc:\n"
-            "  - macOS: brew install pandoc\n"
-            "  - Ubuntu/Debian: sudo apt-get install pandoc\n"
-            "  - Windows: Download from https://pandoc.org/installing.html\n"
-            "  - Other: See https://pandoc.org/installing.html"
-        )
-    
+    """Convert a document to markdown using pandoc or pdftotext."""
     file_path = validate_path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
     
-    # Generate output path
+    # Generate output path (keep the same naming convention: file.pdf -> file.pdf.md)
     output_path = file_path.parent / f"{file_path.name}.md"
     
     # Check if output already exists
@@ -537,35 +530,91 @@ def convert_to_markdown(path: str) -> str:
             f"Use read_file to view it, or delete it first if you want to reconvert."
         )
     
-    try:
-        # Run pandoc conversion
-        result = subprocess.run(
-            ["pandoc", str(file_path), "-o", str(output_path)],
-            capture_output=True,
-            text=True,
-            timeout=30
-        )
+    # Check if this is a PDF file
+    if file_path.suffix.lower() == '.pdf':
+        # Use pdftotext for PDF files
+        if not shutil.which("pdftotext"):
+            return (
+                "❌ Error: pdftotext is not installed.\n\n"
+                "To install pdftotext:\n"
+                "  - macOS: brew install poppler\n"
+                "  - Ubuntu/Debian: sudo apt-get install poppler-utils\n"
+                "  - Windows: Download poppler from https://blog.alivate.com.au/poppler-windows/\n"
+                "  - Other: See https://poppler.freedesktop.org/"
+            )
         
-        if result.returncode != 0:
-            error_msg = result.stderr or "Unknown error"
-            return f"❌ Pandoc conversion failed:\n{error_msg}"
+        try:
+            # pdftotext converts to plain text, saved with .md extension
+            # Using -layout option to preserve text layout better
+            result = subprocess.run(
+                ["pdftotext", "-layout", str(file_path), str(output_path)],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                error_msg = result.stderr or "Unknown error"
+                return f"❌ pdftotext conversion failed:\n{error_msg}"
+            
+            # Get size info
+            original_size = file_path.stat().st_size
+            markdown_size = output_path.stat().st_size
+            
+            rel_output = output_path.relative_to(GIT_ROOT)
+            return (
+                f"✓ Successfully converted PDF to markdown:\n"
+                f"  Input:  {path} ({original_size:,} bytes)\n"
+                f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
+                f"You can now use read_file or edit_file on: {rel_output}"
+            )
+            
+        except subprocess.TimeoutExpired:
+            return "❌ Error: pdftotext conversion timed out after 30 seconds"
+        except Exception as e:
+            return f"❌ Error during PDF conversion: {str(e)}"
+    
+    else:
+        # Use pandoc for other document formats
+        if not check_pandoc_installed():
+            return (
+                "❌ Error: pandoc is not installed.\n\n"
+                "To install pandoc:\n"
+                "  - macOS: brew install pandoc\n"
+                "  - Ubuntu/Debian: sudo apt-get install pandoc\n"
+                "  - Windows: Download from https://pandoc.org/installing.html\n"
+                "  - Other: See https://pandoc.org/installing.html"
+            )
         
-        # Get size info
-        original_size = file_path.stat().st_size
-        markdown_size = output_path.stat().st_size
-        
-        rel_output = output_path.relative_to(GIT_ROOT)
-        return (
-            f"✓ Successfully converted to markdown:\n"
-            f"  Input:  {path} ({original_size:,} bytes)\n"
-            f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
-            f"You can now use read_file or edit_file on: {rel_output}"
-        )
-        
-    except subprocess.TimeoutExpired:
-        return "❌ Error: Pandoc conversion timed out after 30 seconds"
-    except Exception as e:
-        return f"❌ Error during conversion: {str(e)}"
+        try:
+            # Run pandoc conversion
+            result = subprocess.run(
+                ["pandoc", str(file_path), "-o", str(output_path)],
+                capture_output=True,
+                text=True,
+                timeout=30
+            )
+            
+            if result.returncode != 0:
+                error_msg = result.stderr or "Unknown error"
+                return f"❌ Pandoc conversion failed:\n{error_msg}"
+            
+            # Get size info
+            original_size = file_path.stat().st_size
+            markdown_size = output_path.stat().st_size
+            
+            rel_output = output_path.relative_to(GIT_ROOT)
+            return (
+                f"✓ Successfully converted to markdown:\n"
+                f"  Input:  {path} ({original_size:,} bytes)\n"
+                f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
+                f"You can now use read_file or edit_file on: {rel_output}"
+            )
+            
+        except subprocess.TimeoutExpired:
+            return "❌ Error: Pandoc conversion timed out after 30 seconds"
+        except Exception as e:
+            return f"❌ Error during conversion: {str(e)}"
 
 
 @tools.register("convert_from_markdown", """Converts a markdown file back to another format using pandoc.
