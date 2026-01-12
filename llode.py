@@ -732,7 +732,7 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
             return result
         
         # Show brief status during execution
-        console.print(" [dim](running...)[/dim]", end="", flush=True)
+        console.print(" [dim](running...)[/dim]", end="")
         
         result = tools.tools[tool_name](**tool_args)
         
@@ -894,12 +894,17 @@ def stream_response(
                 
             except json.JSONDecodeError:
                 continue
+        
+        # Flush remaining content while still in Live context
+        remaining = parser.flush()
+        if remaining.strip():
+            display_buffer += remaining
+        
+        # Final update to show everything
+        if display_buffer.strip():
+            live.update(Markdown(display_buffer))
     
-    # Flush remaining buffer
-    remaining = parser.flush()
-    if remaining.strip():
-        console.print(Markdown(remaining))
-    
+    # Print any remaining content after Live context ends
     if display_buffer.strip():
         console.print(Markdown(display_buffer))
     
