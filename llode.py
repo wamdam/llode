@@ -10,9 +10,8 @@ import re
 import json
 import argparse
 import readline
-import xml.etree.ElementTree as ET
 from pathlib import Path
-from typing import List, Dict, Callable, Optional
+from typing import List, Dict, Callable, Optional, Tuple
 from dotenv import load_dotenv
 import requests
 from difflib import unified_diff
@@ -40,7 +39,6 @@ def find_git_root() -> Path:
         if (current / ".git").exists():
             return current
         current = current.parent
-    # If no git root found, use current directory
     return Path.cwd()
 
 
@@ -53,37 +51,26 @@ class ToolRegistry:
     
     def register(self, name: str, description: str):
         """Decorator to register a tool function."""
-        def decorator(func: Callable):
+        def decorator(func: Callable) -> Callable:
             self.tools[name] = func
             self.descriptions[name] = description
             return func
         return decorator
-
+    
+    def get_tools_description(self) -> str:
+        """Get formatted description of all tools."""
+        lines = ["Available tools:\n"]
+        for name, desc in self.descriptions.items():
+            lines.append(f"## {name}\n{desc}\n")
+        return "\n".join(lines)
+    
     def get_system_prompt(self, planning_mode: bool = False) -> str:
-        """Generate system prompt from registered tools."""
-        # Filter out edit_file in planning mode
-        if planning_mode:
-            filtered_descriptions = {k: v for k, v in self.descriptions.items() if k != "edit_file"}
-        else:
-            filtered_descriptions = self.descriptions
+        """Generate system prompt with tool descriptions."""
+        tools_desc = self.get_tools_description()
         
-        tools_desc = "\n\n".join([
-            f"**{name}**\n{desc}"
-            for name, desc in filtered_descriptions.items()
-        ])
-
         planning_prefix = ""
         if planning_mode:
-            planning_prefix = """[PLANNING MODE ACTIVE]
-
-You are currently in PLANNING MODE. In this mode, you CANNOT modify any files.
-Your role is to:
-- Analyze the codebase and requirements
-- Create detailed implementation plans
-- Break down complex tasks into steps
-- Suggest approaches and solutions
-- Use the todo list to organize work
-- Read files and search the codebase for understanding
+            planning_prefix = """⚠️ PLANNING MODE ACTIVE ⚠️
 
 The edit_file tool is DISABLED. Focus on planning and analysis.
 
@@ -91,85 +78,128 @@ The edit_file tool is DISABLED. Focus on planning and analysis.
 
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
-IMPORTANT: Use tools with this EXACT XML format:
+IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
-For tools WITH parameters:
-<tool_call>
-<tool_name>tool_name</tool_name>
-<parameters>
-<param1><![CDATA[value1]]></param1>
-<param2><![CDATA[value2]]></param2>
-</parameters>
-</tool_call>
+TOOL CALL FORMAT:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: [unique-id]
 
-For tools WITHOUT parameters:
-<tool_call>
-<tool_name>tool_name</tool_name>
-</tool_call>
+--[unique-id]
+Content-Disposition: param; name="tool_name"
+
+[tool_name_here]
+--[unique-id]
+Content-Disposition: param; name="param1"
+
+[value1]
+--[unique-id]
+Content-Disposition: param; name="param2"
+
+[value2]
+--[unique-id]--
+--TOOL_CALL_END
 
 RULES:
-1. ALL parameter values MUST be wrapped in CDATA sections
-2. Use XML tags to preserve exact whitespace and newlines
-3. old_str must match EXACTLY (every space, tab, newline)
-4. If old_str is empty, a new file will be created
-5. All file paths are relative to the project root
-6. Do not access dotfiles
+1. Each tool call starts with --TOOL_CALL_BEGIN and ends with --TOOL_CALL_END
+2. Generate a unique Boundary-ID (8+ alphanumeric chars) for each tool call
+3. Parameter values preserve EXACT whitespace - no escaping needed
+4. The boundary ID must NOT appear in any parameter value
+5. If your content contains the boundary string, use a different boundary ID
+6. old_str must match EXACTLY (every space, tab, newline)
+7. If old_str is empty, a new file will be created
+8. All file paths are relative to the project root
+9. Do not access dotfiles
 
-Example for reading a file:
-<tool_call>
-<tool_name>read_file</tool_name>
-<parameters>
-<path><![CDATA[src/main.py]]></path>
-</parameters>
-</tool_call>
+NESTING: If you need to show example tool calls in your content, use a DIFFERENT
+boundary ID than the outer tool call. The parser handles nesting automatically.
 
-Example for editing with XML in content:
-<tool_call>
-<tool_name>edit_file</tool_name>
-<parameters>
-<path><![CDATA[config.xml]]></path>
-<old_str><![CDATA[<setting>old</setting>]]></old_str>
-<new_str><![CDATA[<setting>new</setting>]]></new_str>
-</parameters>
-</tool_call>
+EXAMPLE - Reading a file:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: abc123
 
-DEBUGGING TOOL CALL ERRORS:
-If you get "Invalid tool XML" errors:
-1. Check that EVERY parameter has both <![CDATA[ and ]]>
-2. Verify no extra spaces around CDATA tags
-3. Ensure old_str matches the file EXACTLY (whitespace matters!)
-4. For content with ]]> inside, remember the escape pattern
-5. Check that all XML tags are properly closed
+--abc123
+Content-Disposition: param; name="tool_name"
 
+read_file
+--abc123
+Content-Disposition: param; name="path"
 
-CRITICAL CDATA RULES (violations cause 100% failure rate):
-1. EVERY parameter value MUST have BOTH <![CDATA[ AND ]]>
-2. NO spaces: <![CDATA[content]]> NOT <![CDATA[ content ]]>
-3. For ]]> in content, use: ]]]]><![CDATA[>
-4. Empty values: <old_str><![CDATA[]]></old_str>
+src/main.py
+--abc123--
+--TOOL_CALL_END
+
+EXAMPLE - Editing a file:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: xyz789
+
+--xyz789
+Content-Disposition: param; name="tool_name"
+
+edit_file
+--xyz789
+Content-Disposition: param; name="path"
+
+config.py
+--xyz789
+Content-Disposition: param; name="old_str"
+
+def hello():
+    print("Hello")
+--xyz789
+Content-Disposition: param; name="new_str"
+
+def hello(name="World"):
+    print(f"Hello, {{name}}!")
+--xyz789--
+--TOOL_CALL_END
+
+EXAMPLE - Creating a new file (empty old_str):
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: new456
+
+--new456
+Content-Disposition: param; name="tool_name"
+
+edit_file
+--new456
+Content-Disposition: param; name="path"
+
+new_file.py
+--new456
+Content-Disposition: param; name="old_str"
+
+--new456
+Content-Disposition: param; name="new_str"
+
+#!/usr/bin/env python3
+print("New file!")
+--new456--
+--TOOL_CALL_END
+
+EXAMPLE - Tool with no parameters:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: list99
+
+--list99
+Content-Disposition: param; name="tool_name"
+
+list_files
+--list99--
+--TOOL_CALL_END
 
 VERIFICATION CHECKLIST before sending tool call:
-* Every <parameter> has opening <![CDATA[
-* Every <parameter> has closing ]]>
-* No extra spaces around CDATA markers
-* No naked ]]> sequences in content
-* A parameter start tag must match the parameter's end tag.
-
-COMMON MISTAKES:
-❌ Mismatched tags: <old_str><![CDATA[data]]</new_str>
-✅ Correct: <old_str><![CDATA[data]]</old_str>
-
-❌ Forgetting CDATA: <path>file.py</path>
-✅ Correct: <path><![CDATA[]]></path>
-
-❌ Wrong closing: <path><![CDATA></path>
-✅ Correct: <path><![CDATA[]]></path>
-
-❌ Whitespace mismatch in old_str
-✅ Copy exact spacing including all tabs/newlines
-
-❌ Missing escape for ]]> in content
-✅ Use ]]]]><![CDATA[> pattern when needed
+* Starts with --TOOL_CALL_BEGIN
+* Has Content-Type: tool-call header
+* Has Boundary-ID: [id] header
+* Each param has --[id] before and Content-Disposition header
+* Ends with --[id]-- then --TOOL_CALL_END
+* Boundary ID doesn't appear in any parameter values
+* old_str matches file content EXACTLY (whitespace matters!)
 
 {tools_desc}
 """
@@ -223,33 +253,33 @@ def get_gitignore_spec() -> Optional[pathspec.PathSpec]:
     return None
 
 
-def is_ignored(path: Path, spec: Optional[pathspec.PathSpec]) -> bool:
-    """Check if path should be ignored based on .gitignore."""
-    if spec is None:
+def is_ignored(path: Path, gitignore_spec: Optional[pathspec.PathSpec]) -> bool:
+    """Check if path should be ignored."""
+    if gitignore_spec is None:
         return False
-    
-    # Get relative path from git root
     try:
         rel_path = path.relative_to(GIT_ROOT)
+        return gitignore_spec.match_file(str(rel_path))
     except ValueError:
-        return True
-    
-    return spec.match_file(str(rel_path))
+        return False
 
 
-def validate_path(path_str: str) -> Path:
-    """Validate and resolve a path relative to git root."""
-    path_str = path_str.lstrip('/')
-    path = (GIT_ROOT / path_str).resolve()
+def validate_path(path: str) -> Path:
+    """Validate and resolve a path relative to GIT_ROOT."""
+    clean_path = Path(path).as_posix()
+    if clean_path.startswith('/'):
+        clean_path = clean_path[1:]
     
-    try:
-        rel_path = path.relative_to(GIT_ROOT)
-        if is_dotfile(rel_path):
-            raise ValueError(f"Access to dotfiles is not allowed: {path_str}")
-    except ValueError:
-        raise ValueError(f"Path {path_str} is outside the project directory")
+    full_path = (GIT_ROOT / clean_path).resolve()
     
-    return path
+    if not str(full_path).startswith(str(GIT_ROOT)):
+        raise ValueError(f"Path escapes project root: {path}")
+    
+    rel_path = full_path.relative_to(GIT_ROOT)
+    if is_dotfile(rel_path):
+        raise ValueError(f"Access to dotfiles is not allowed: {path}")
+    
+    return full_path
 
 
 def walk_files(gitignore_spec: Optional[pathspec.PathSpec]) -> List[Path]:
@@ -258,12 +288,10 @@ def walk_files(gitignore_spec: Optional[pathspec.PathSpec]) -> List[Path]:
     for root, dirs, filenames in os.walk(GIT_ROOT):
         root_path = Path(root)
         
-        # Filter directories in-place
         dirs[:] = [d for d in dirs 
                    if not is_dotfile(root_path.relative_to(GIT_ROOT) / d) 
                    and not is_ignored(root_path / d, gitignore_spec)]
         
-        # Add valid files
         for filename in filenames:
             file_path = root_path / filename
             rel_path = file_path.relative_to(GIT_ROOT)
@@ -274,12 +302,6 @@ def walk_files(gitignore_spec: Optional[pathspec.PathSpec]) -> List[Path]:
 
 
 @tools.register("list_files", """Lists all files in the project directory recursively.
-Usage:
-<tool_call>
-<tool_name>list_files</tool_name>
-<parameters>
-</parameters>
-</tool_call>
 
 Returns a list of all files, excluding those in .gitignore and dotfiles.""")
 def list_files() -> str:
@@ -289,37 +311,25 @@ def list_files() -> str:
 
 
 @tools.register("read_file", """Reads the contents of a file.
-Usage:
-<tool_call>
-<tool_name>read_file</tool_name>
-<parameters>
-<path>relative/path/to/file.txt</path>
-</parameters>
-</tool_call>
+
+Parameters:
+- path: relative path to the file
 
 Returns the file contents.""")
 def read_file(path: str) -> str:
-    """Read and return the contents of a file."""
+    """Read the contents of a file."""
     file_path = validate_path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
-    if not file_path.is_file():
-        raise ValueError(f"Path is not a file: {path}")
     return file_path.read_text()
 
 
 @tools.register("edit_file", """Edits a file by replacing old_str with new_str.
-Usage:
-<tool_call>
-<tool_name>edit_file</tool_name>
-<parameters>
-<path>relative/path/to/file.txt</path>
-<old_str>exact text to replace
-including all whitespace</old_str>
-<new_str>new text content
-with exact formatting</new_str>
-</parameters>
-</tool_call>
+
+Parameters:
+- path: relative path to the file
+- old_str: exact string to replace (empty to create new file)
+- new_str: replacement string
 
 If old_str is empty, creates a new file with new_str content.
 The old_str must match EXACTLY including all whitespace and newlines.""")
@@ -359,38 +369,29 @@ def edit_file(path: str, old_str: str, new_str: str) -> str:
 
 
 @tools.register("fetch_url", """Fetches content from a URL.
-Usage:
-<tool_call>
-<tool_name>fetch_url</tool_name>
-<parameters>
-<url>https://example.com/page</url>
-</parameters>
-</tool_call>
+
+Parameters:
+- url: The URL to fetch (must start with http:// or https://)
 
 Returns the content from the URL. Supports HTTP and HTTPS.""")
 def fetch_url(url: str) -> str:
     """Fetch content from a URL."""
     try:
-        # Validate URL starts with http:// or https://
         if not url.startswith(('http://', 'https://')):
             raise ValueError("URL must start with http:// or https://")
         
-        # Make the request with a timeout
         response = requests.get(url, timeout=30, headers={
             'User-Agent': 'Mozilla/5.0 (compatible; LLM-CLI-Assistant/1.0)'
         })
         response.raise_for_status()
         
-        # Get content type
         content_type = response.headers.get('content-type', '').lower()
         
-        # Return appropriate content based on type
         if 'application/json' in content_type:
             return response.text
         elif 'text/' in content_type or 'application/xml' in content_type:
             return response.text
         else:
-            # For binary or unknown content types
             return f"Content-Type: {content_type}\nContent-Length: {len(response.content)} bytes\n\n(Binary or non-text content - first 500 chars):\n{response.text[:500]}"
         
     except requests.exceptions.Timeout:
@@ -400,90 +401,61 @@ def fetch_url(url: str) -> str:
 
 
 @tools.register("search_codebase", """Searches for a string in the codebase.
-Usage:
-<tool_call>
-<tool_name>search_codebase</tool_name>
-<parameters>
-<search_term>text to search for</search_term>
-<case_sensitive>false</case_sensitive>
-</parameters>
-</tool_call>
 
 Parameters:
 - search_term: The string to search for (required)
 - case_sensitive: Whether to match case (default: false)
 
-Returns matches with file path, line number, and line content.
-Respects .gitignore and excludes dotfiles.""")
+Returns matching lines with file paths and line numbers.""")
 def search_codebase(search_term: str, case_sensitive: str = "false") -> str:
-    """Search for a string in all files in the codebase."""
-    if not search_term:
-        raise ValueError("search_term cannot be empty")
-    
+    """Search for a string in all files."""
     case_sensitive_bool = case_sensitive.lower() == "true"
-    search_lower = search_term if case_sensitive_bool else search_term.lower()
-    results = []
+    gitignore_spec = get_gitignore_spec()
+    files = walk_files(gitignore_spec)
     
-    for rel_path in walk_files(get_gitignore_spec()):
-        file_path = GIT_ROOT / rel_path
+    results = []
+    search_pattern = search_term if case_sensitive_bool else search_term.lower()
+    
+    for file_path in files:
         try:
-            with open(file_path, 'r', encoding='utf-8', errors='ignore') as f:
-                for line_num, line in enumerate(f, start=1):
-                    line_to_search = line if case_sensitive_bool else line.lower()
-                    if search_lower in line_to_search:
-                        results.append(f"{rel_path}:{line_num}:{line.rstrip()}")
-                        if len(results) >= 100:
-                            results.append("(max 100 results shown)")
-                            return "\n".join(results)
-        except (UnicodeDecodeError, PermissionError, IsADirectoryError):
+            full_path = GIT_ROOT / file_path
+            content = full_path.read_text()
+            lines = content.splitlines()
+            
+            for line_num, line in enumerate(lines, 1):
+                compare_line = line if case_sensitive_bool else line.lower()
+                if search_pattern in compare_line:
+                    results.append(f"{file_path}:{line_num}: {line.strip()}")
+        except (UnicodeDecodeError, PermissionError):
             continue
     
     return "\n".join(results) if results else f"No matches found for: {search_term}"
 
 
 @tools.register("todo_read", """Reads the current todo list from LLODE_TODO.json.
-Usage:
-<tool_call>
-<tool_name>todo_read</tool_name>
-</tool_call>
 
-Returns todo items as JSON array (empty if file doesn't exist).
-
-Use proactively and frequently to:
-* Track progress and prioritize work across conversations
-* Check status at conversation start, before new tasks, and after completing work
-* Stay organized when uncertain about next steps
-
-CRITICAL: Takes NO parameters - leave blank, no dummy objects or placeholder strings.
-""")
+Returns the current todo list or empty structure if none exists.""")
 def todo_read() -> str:
-    """Read the current todo list from LLODE_TODO.json."""
+    """Read the todo list."""
     todo_path = GIT_ROOT / "LLODE_TODO.json"
-    return todo_path.read_text() if todo_path.exists() else "[]"
+    if todo_path.exists():
+        return todo_path.read_text()
+    return json.dumps({"tasks": []}, indent=2)
 
 
 @tools.register("todo_write", """Writes/updates the todo list to LLODE_TODO.json.
-Usage:
-<tool_call>
-<tool_name>todo_write</tool_name>
-<parameters>
-<content>[
-  {"task": "Example task", "status": "pending", "priority": "high"},
-  {"task": "Another task", "status": "completed", "priority": "medium"}
-]</content>
-</parameters>
-</tool_call>
 
-Content must be valid JSON array with:
-- task: Description of work
-- status: "pending" | "in_progress" | "completed"
-- priority: "high" | "medium" | "low"
+Parameters:
+- content: JSON string with the todo list structure
 
-WHEN TO USE: Complex multi-step tasks (3+ steps), user-provided task lists, non-trivial planning needs.
-WHEN TO SKIP: Single straightforward tasks, trivial operations (under 3 steps), purely informational requests.
+Expected format:
+{
+  "tasks": [
+    {"id": 1, "description": "Task description", "status": "pending|in_progress|completed"}
+  ]
+}
 
-CRITICAL: Mark in_progress BEFORE starting work. Only mark completed when FULLY done (not if blocked/errored).
-""")
+CRITICAL: Mark in_progress BEFORE starting work. Only mark completed when FULLY done.""")
 def todo_write(content: str) -> str:
     """Write/update the todo list to LLODE_TODO.json."""
     json.loads(content)  # Validate JSON
@@ -491,18 +463,22 @@ def todo_write(content: str) -> str:
     return "Todo list updated successfully"
 
 
-class ToolCallParser:
-    """Parser for XML-style tool calls that handles nested tags."""
+class MIMEToolCallParser:
+    """Parser for MIME-style tool calls with nesting support."""
+    
+    TOOL_BEGIN = "--TOOL_CALL_BEGIN"
+    TOOL_END = "--TOOL_CALL_END"
     
     def __init__(self):
         self.buffer = ""
         self.in_tool = False
-        self.depth = 0
+        self.nesting_depth = 0
     
-    def feed(self, text: str) -> List[tuple[str, str]]:
+    def feed(self, text: str) -> List[Tuple[Optional[str], str]]:
         """
         Feed text to parser and return completed tool calls.
-        Returns list of (tool_call_xml, preceding_text) tuples.
+        Returns list of (tool_call_content, preceding_text) tuples.
+        tool_call_content is None for plain text segments.
         """
         results = []
         self.buffer += text
@@ -510,132 +486,193 @@ class ToolCallParser:
         while True:
             if not self.in_tool:
                 # Look for start of tool call
-                match = re.search(r'<tool_call>', self.buffer)
-                if match:
-                    preceding = self.buffer[:match.start()]
-                    self.buffer = self.buffer[match.start():]
+                begin_idx = self.buffer.find(self.TOOL_BEGIN)
+                if begin_idx != -1:
+                    preceding = self.buffer[:begin_idx]
+                    self.buffer = self.buffer[begin_idx:]
                     self.in_tool = True
-                    self.depth = 1
-                    self.tool_start = match.start()
+                    self.nesting_depth = 1
                     if preceding:
                         results.append((None, preceding))
                 else:
-                    # No tool call found, keep buffer small for split tags
-                    if len(self.buffer) > 20:
-                        results.append((None, self.buffer[:-20]))
-                        self.buffer = self.buffer[-20:]
+                    # No tool call found, keep buffer for potential partial markers
+                    marker_len = len(self.TOOL_BEGIN)
+                    if len(self.buffer) > marker_len:
+                        results.append((None, self.buffer[:-marker_len]))
+                        self.buffer = self.buffer[-marker_len:]
                     break
             else:
-                # Look for nested <tool_call> or closing </tool_call>
-                open_match = re.search(r'<tool_call>', self.buffer)
-                close_match = re.search(r'</tool_call>', self.buffer)
+                # We're inside a tool call, look for nested begins or end
+                search_start = len(self.TOOL_BEGIN)  # Skip the opening marker
                 
-                if open_match and (not close_match or open_match.start() < close_match.start()):
-                    # Found nested opening tag
-                    self.buffer = self.buffer[open_match.end():]
-                    self.depth += 1
-                elif close_match:
-                    # Found closing tag
-                    self.depth -= 1
-                    if self.depth == 0:
-                        # Complete tool call - extract from <tool_call> to </tool_call>
-                        tool_call_end = close_match.end()
-                        complete_call = self.buffer[:tool_call_end]
-                        self.buffer = self.buffer[tool_call_end:]
-                        results.append((complete_call, ""))
-                        self.in_tool = False
+                while True:
+                    # Find next BEGIN or END marker
+                    next_begin = self.buffer.find(self.TOOL_BEGIN, search_start)
+                    next_end = self.buffer.find(self.TOOL_END, search_start)
+                    
+                    if next_end == -1:
+                        # No end marker yet, wait for more content
+                        break
+                    
+                    if next_begin != -1 and next_begin < next_end:
+                        # Found nested tool call
+                        self.nesting_depth += 1
+                        search_start = next_begin + len(self.TOOL_BEGIN)
                     else:
-                        # Still nested, continue
-                        self.buffer = self.buffer[close_match.end():]
-                else:
-                    # No complete tag found yet, wait for more data
-                    if len(self.buffer) > 100:
-                        # Keep last 100 chars in case tag is split
-                        self.buffer = self.buffer[-100:]
+                        # Found end marker
+                        self.nesting_depth -= 1
+                        if self.nesting_depth == 0:
+                            # Complete tool call found
+                            end_pos = next_end + len(self.TOOL_END)
+                            tool_content = self.buffer[:end_pos]
+                            self.buffer = self.buffer[end_pos:]
+                            self.in_tool = False
+                            results.append((tool_content, ""))
+                            break
+                        else:
+                            search_start = next_end + len(self.TOOL_END)
+                
+                if self.in_tool:
+                    # Still waiting for end marker
                     break
         
         return results
     
-    def get_remaining(self) -> str:
+    def flush(self) -> str:
         """Get any remaining text in buffer."""
         remaining = self.buffer
         self.buffer = ""
         self.in_tool = False
+        self.nesting_depth = 0
         return remaining
 
 
-def parse_tool_call(tool_xml: str) -> tuple[str, Dict[str, str]]:
+def parse_mime_tool_call(tool_content: str) -> Tuple[str, Dict[str, str]]:
     """
-    Parse XML-style tool call with proper CDATA handling.
+    Parse a MIME-style tool call and extract tool name and parameters.
     Returns (tool_name, parameters_dict)
     """
-    try:
-        # First try standard parsing
-        root = ET.fromstring(tool_xml)
-    except ET.ParseError:
-        try:
-            # If that fails, try wrapping in a root element to handle multiple root nodes
-            root = ET.fromstring(f"<root>{tool_xml}</root>").find('.')
-            if root is None:
-                raise ValueError("No tool call found in XML")
-        except ET.ParseError as e:
-            raise ValueError(f"Invalid tool XML: {str(e)}")
-
-    tool_name = root.find('tool_name')
-    if tool_name is None or tool_name.text is None:
-        raise ValueError("Tool call missing <tool_name>")
-
+    # Remove the outer markers
+    content = tool_content.strip()
+    if content.startswith(MIMEToolCallParser.TOOL_BEGIN):
+        content = content[len(MIMEToolCallParser.TOOL_BEGIN):].strip()
+    if content.endswith(MIMEToolCallParser.TOOL_END):
+        content = content[:-len(MIMEToolCallParser.TOOL_END)].strip()
+    
+    # Parse headers
+    lines = content.split('\n')
+    boundary_id = None
+    header_end = 0
+    
+    for i, line in enumerate(lines):
+        line = line.strip()
+        if line.startswith('Boundary-ID:'):
+            boundary_id = line.split(':', 1)[1].strip()
+        elif line == '' and boundary_id:
+            header_end = i + 1
+            break
+        elif line.startswith('Content-Type:'):
+            continue
+    
+    if not boundary_id:
+        raise ValueError("Missing Boundary-ID in tool call")
+    
+    # Parse the body using the boundary
+    body = '\n'.join(lines[header_end:])
+    boundary_marker = f"--{boundary_id}"
+    boundary_end = f"--{boundary_id}--"
+    
+    # Split by boundary markers
+    parts = []
+    current_pos = 0
+    
+    while True:
+        # Find next boundary
+        next_boundary = body.find(boundary_marker, current_pos)
+        if next_boundary == -1:
+            break
+        
+        # Check if it's the ending boundary
+        is_end = body[next_boundary:next_boundary + len(boundary_end)] == boundary_end
+        
+        if is_end:
+            break
+        
+        # Find the end of this part (next boundary or end)
+        part_start = next_boundary + len(boundary_marker)
+        next_part = body.find(boundary_marker, part_start)
+        
+        if next_part == -1:
+            part_content = body[part_start:]
+        else:
+            part_content = body[part_start:next_part]
+        
+        parts.append(part_content)
+        current_pos = part_start
+    
+    # Parse each part
     params = {}
-    params_elem = root.find('parameters')
-    if params_elem is not None:
-        for param in params_elem:
-            if param.text is not None:
-                # Handle CDATA if present
-                if param.text.startswith('<![CDATA[') and param.text.endswith(']]>'):
-                    params[param.tag] = param.text[9:-3]
-                else:
-                    params[param.tag] = param.text
+    tool_name = None
+    
+    for part in parts:
+        part = part.strip()
+        if not part:
+            continue
+        
+        # Parse Content-Disposition header
+        lines = part.split('\n')
+        param_name = None
+        content_start = 0
+        
+        for i, line in enumerate(lines):
+            line_stripped = line.strip()
+            if line_stripped.startswith('Content-Disposition:'):
+                # Extract name from Content-Disposition
+                match = re.search(r'name="([^"]+)"', line_stripped)
+                if match:
+                    param_name = match.group(1)
+            elif line_stripped == '' and param_name:
+                content_start = i + 1
+                break
+        
+        if param_name:
+            # Get the content (everything after the blank line)
+            value_lines = lines[content_start:]
+            # Remove trailing empty lines but preserve internal structure
+            while value_lines and value_lines[-1].strip() == '':
+                value_lines.pop()
+            value = '\n'.join(value_lines)
+            
+            if param_name == "tool_name":
+                tool_name = value.strip()
             else:
-                params[param.tag] = ""
+                params[param_name] = value
+    
+    if not tool_name:
+        raise ValueError("Missing tool_name in tool call")
+    
+    return tool_name, params
 
-    return tool_name.text.strip(), params
 
-
-def format_tool_output_for_display(tool_name: str, result: str, tool_args: Dict[str, str]) -> str:
-    """Format tool output for concise display in CLI."""
+def format_tool_output_for_display(tool_name: str, result: str, args: Dict) -> str:
+    """Format tool output for concise display."""
     
     if tool_name == "read_file":
         lines = result.splitlines()
         total_lines = len(lines)
+        path = args.get('path', 'file')
         
-        if total_lines <= 40:
-            # Show all lines with line numbers
-            numbered_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines)]
-            content = "\n".join(numbered_lines)
-            return f"```\n{content}\n```\n({total_lines} lines)"
+        if total_lines <= 50:
+            return f"```\n{result}\n```\n({total_lines} lines)"
         else:
-            # Show first 20 and last 20 lines
-            head_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines[:20])]
-            foot_lines = [f"{i+1:4d} | {line}" for i, line in enumerate(lines[-20:], start=total_lines-20)]
-            
-            content = "\n".join(head_lines)
-            content += f"\n     | ... ({total_lines - 40} more lines) ...\n"
-            content += "\n".join(foot_lines)
-            
-            return f"```\n{content}\n```\n({total_lines} lines total)"
+            head = "\n".join(lines[:25])
+            foot = "\n".join(lines[-25:])
+            return f"```\n{head}\n\n... ({total_lines - 50} lines omitted) ...\n\n{foot}\n```\n({total_lines} lines total)"
     
     elif tool_name == "edit_file":
-        # Parse the unified diff and format it nicely
         lines = result.splitlines()
-        
-        if result.startswith("Created new file:"):
-            return result
-        
-        # Count changes
         additions = sum(1 for line in lines if line.startswith('+') and not line.startswith('+++'))
         deletions = sum(1 for line in lines if line.startswith('-') and not line.startswith('---'))
-        
-        # Format diff with syntax highlighting hint
         return f"```diff\n{result}\n```\n(+{additions} -{deletions})"
     
     elif tool_name == "list_files":
@@ -648,10 +685,8 @@ def format_tool_output_for_display(tool_name: str, result: str, tool_args: Dict[
         if total_files <= 40:
             return f"```\n{result}\n```\n({total_files} files)"
         else:
-            # Show first 20 and last 20 files
             head = "\n".join(lines[:20])
             foot = "\n".join(lines[-20:])
-            
             return f"```\n{head}\n... ({total_files - 40} more files) ...\n{foot}\n```\n({total_files} files total)"
     
     elif tool_name == "search_codebase":
@@ -661,22 +696,18 @@ def format_tool_output_for_display(tool_name: str, result: str, tool_args: Dict[
         if total_matches <= 40:
             return f"```\n{result}\n```\n({total_matches} matches)"
         else:
-            # Show first 20 and last 20 matches
             head = "\n".join(lines[:20])
             foot = "\n".join(lines[-20:])
-            
             return f"```\n{head}\n... ({total_matches - 40} more matches) ...\n{foot}\n```\n({total_matches} matches total)"
     
-    # Default: return as-is for other tools
     return result
 
 
-def execute_tool(tool_xml: str, console: Console, planning_mode: bool = False) -> str:
+def execute_tool(tool_content: str, console: Console, planning_mode: bool = False) -> str:
     """Execute a tool call and return the result."""
     try:
-        tool_name, tool_args = parse_tool_call(tool_xml)
+        tool_name, tool_args = parse_mime_tool_call(tool_content)
         
-        # Block edit_file in planning mode
         if planning_mode and tool_name == "edit_file":
             result = "❌ edit_file is disabled in planning mode. Use /plan to toggle planning mode."
             console.print(f"[red]{result}[/red]\n")
@@ -689,157 +720,142 @@ def execute_tool(tool_xml: str, console: Console, planning_mode: bool = False) -
             console.print(f"[red]{result}[/red]\n")
             return result
         
-        # Execute the tool
         result = tools.tools[tool_name](**tool_args)
-        
-        # Format output for display (concise version)
         display_output = format_tool_output_for_display(tool_name, result, tool_args)
         
-        # Display formatted result
         console.print(Markdown(display_output))
         console.print()
         
-        # Return full result for LLM context
         return result
         
     except Exception as e:
         error_msg = f"❌ Tool execution error: {str(e)}"
         console.print(f"[red]{error_msg}[/red]\n")
-        console.print(f"[red]{tool_xml}[/red]\n")
+        console.print(f"[dim]{tool_content[:500]}...[/dim]\n" if len(tool_content) > 500 else f"[dim]{tool_content}[/dim]\n")
         return error_msg
 
+
+def fetch_available_models(base_url: str, api_key: str) -> List[Dict]:
+    """Fetch available models from the API."""
+    try:
+        response = requests.get(
+            f"{base_url}/models",
+            headers={"Authorization": f"Bearer {api_key}"},
+            timeout=10
+        )
+        response.raise_for_status()
+        data = response.json()
+        return data.get('data', [])
+    except Exception as e:
+        print(f"Error fetching models: {e}")
+        return []
+
+
+def manage_context(messages: List[Dict], max_tokens: int) -> List[Dict]:
+    """Trim old messages to stay within context limit."""
+    total_chars = sum(len(m.get('content', '')) for m in messages)
+    estimated_tokens = total_chars // 4
     
-def estimate_tokens(text: str) -> int:
-    """Rough estimate of token count."""
-    return len(text) // 4
+    while estimated_tokens > max_tokens and len(messages) > 2:
+        messages.pop(1)
+        total_chars = sum(len(m.get('content', '')) for m in messages)
+        estimated_tokens = total_chars // 4
+    
+    return messages
 
 
-def manage_context(messages: List[Dict], system_prompt: str) -> List[Dict]:
-    """Manage context window to stay under token limit."""
-    total_tokens = estimate_tokens(system_prompt)
-
-    # Count tokens from newest to oldest
-    kept_messages = []
-    for msg in reversed(messages):
-        # Skip tool call messages when counting tokens (they're paired with outputs)
-        if msg.get('content', '').strip().startswith('<tool_call>'):
-            continue
-
-        msg_tokens = estimate_tokens(str(msg))
-        if total_tokens + msg_tokens > MAX_CONTEXT_TOKENS:
-            break
-        kept_messages.insert(0, msg)
-        total_tokens += msg_tokens
-
-    return kept_messages
-
-
-def stream_chat(messages: List[Dict], base_url: str, api_key: str, model: str, console: Console, planning_mode: bool = False) -> str:
-    """Stream chat completion and execute tools during streaming."""
+def stream_response(
+    messages: List[Dict],
+    base_url: str,
+    api_key: str,
+    model: str,
+    console: Console,
+    planning_mode: bool = False
+) -> str:
+    """Stream response from API and handle tool calls."""
+    
     url = f"{base_url}/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
-
-    # We'll maintain the full response with tool outputs
-    full_response = ""
-    tool_outputs = []
-
-    # First pass - get the initial response
+    
     data = {
         "model": model,
         "messages": messages,
-        "stream": True
+        "stream": True,
+        "max_tokens": 16000
     }
-
+    
+    full_response = ""
+    tool_outputs = []
+    parser = MIMEToolCallParser()
+    display_buffer = ""
+    
     response = requests.post(url, headers=headers, json=data, stream=True)
     response.raise_for_status()
-
-    in_tool_call = False
-    tool_buffer = ""
-    tool_depth = 0
-    current_line = ""
-
+    
     with Live("", console=console, refresh_per_second=10) as live:
         for line in response.iter_lines():
             if not line:
                 continue
-
+            
             line = line.decode('utf-8')
             if not line.startswith('data: '):
                 continue
-
+            
             if line == 'data: [DONE]':
                 break
-
+            
             try:
-                chunk = requests.compat.json.loads(line[6:])
+                chunk = json.loads(line[6:])
                 delta = chunk.get('choices', [{}])[0].get('delta', {})
                 content = delta.get('content', '')
-
+                
                 if not content:
                     continue
-
+                
                 full_response += content
-
-                # Process character by character for tool detection
-                for char in content:
-                    current_line += char
-
-                    if not in_tool_call and '<tool_call>' in current_line:
-                        in_tool_call = True
-                        tool_depth = 1
-                        idx = current_line.find('<tool_call>')
-                        before_tool = current_line[:idx]
-                        if before_tool:
-                            live.update(Markdown(before_tool))
-                        tool_buffer = '<tool_call>'
-                        current_line = current_line[idx + len('<tool_call>'):]
-                        continue
-
-                    if in_tool_call:
-                        tool_buffer += char
-
-                        if tool_buffer.endswith('<tool_call>'):
-                            tool_depth += 1
-                        elif tool_buffer.endswith('</tool_call>'):
-                            tool_depth -= 1
-
-                            if tool_depth == 0:
-                                in_tool_call = False
-                                live.stop()
-
-                                # Execute tool and get output
-                                tool_output = execute_tool(tool_buffer, console, planning_mode)
-                                tool_outputs.append((tool_buffer, tool_output))
-
-                                # Add tool output to response
-                                full_response += f"\n{tool_output}\n"
-
-                                live.start()
-                                tool_buffer = ""
-                                current_line = ""
-                                continue
-
-                if not in_tool_call and current_line.strip():
-                    if current_line.endswith(('\n', '.', '!', '?', ':', ';')):
-                        live.update(Markdown(current_line))
-
-            except Exception as e:
-                console.print(f"[red]Error processing chunk: {e}[/red]")
+                
+                # Parse for tool calls
+                results = parser.feed(content)
+                
+                for tool_content, text in results:
+                    if tool_content:
+                        # Complete tool call found
+                        live.stop()
+                        if display_buffer.strip():
+                            console.print(Markdown(display_buffer))
+                        display_buffer = ""
+                        
+                        tool_result = execute_tool(tool_content, console, planning_mode)
+                        tool_outputs.append((tool_content, tool_result))
+                        
+                        live.start()
+                    else:
+                        display_buffer += text
+                        if display_buffer.strip():
+                            live.update(Markdown(display_buffer))
+                
+            except json.JSONDecodeError:
                 continue
-
-    # If we had tool calls, we need to make a follow-up request with the tool outputs
+    
+    # Flush remaining buffer
+    remaining = parser.flush()
+    if remaining.strip():
+        console.print(Markdown(remaining))
+    
+    if display_buffer.strip():
+        console.print(Markdown(display_buffer))
+    
+    # Handle tool outputs - make follow-up request
     if tool_outputs:
-        # Add all tool outputs to the conversation
         for tool_call, tool_output in tool_outputs:
             messages.append({
                 "role": "assistant",
                 "content": tool_call
             })
             
-            # Wrap tool output in JSON format
             tool_result = {
                 "status": "success" if not tool_output.startswith("❌") else "error",
                 "output": tool_output
@@ -849,67 +865,11 @@ def stream_chat(messages: List[Dict], base_url: str, api_key: str, model: str, c
                 "role": "user",
                 "content": f"Tool output:\n{json.dumps(tool_result, indent=2)}"
             })
-
-        # Make a second request with the tool outputs
-        try:
-            second_response = stream_chat(
-                messages,
-                base_url,
-                api_key,
-                model,
-                console,
-                planning_mode
-            )
-            full_response += "\n" + second_response
-        except Exception as e:
-            console.print(f"[red]Error in follow-up request: {e}[/red]")
-
-    if current_line.strip() and not in_tool_call:
-        console.print(Markdown(current_line))
-
-    console.print()
+        
+        console.print("\n[dim]Processing tool results...[/dim]\n")
+        return stream_response(messages, base_url, api_key, model, console, planning_mode)
+    
     return full_response
-
-def fetch_available_models(base_url: str, api_key: str) -> List[Dict[str, str]]:
-    """Fetch available models from the API /models endpoint."""
-    try:
-        # Construct the models endpoint URL
-        # Remove /v1 suffix if present and add /models
-        api_base = base_url.rstrip('/').replace('/v1', '')
-        models_url = f"{api_base}/models"
-        
-        # Make the API request
-        headers = {
-            "accept": "application/json",
-            "Authorization": f"Bearer {api_key}"
-        }
-        
-        response = requests.get(models_url, headers=headers, timeout=10)
-        response.raise_for_status()
-        
-        # Parse the response
-        data = response.json()
-        
-        # Extract model information from the data array
-        if "data" in data and isinstance(data["data"], list):
-            models = []
-            for model in data["data"]:
-                if "id" in model:
-                    models.append({
-                        "id": model["id"],
-                        "owned_by": model.get("owned_by", "unknown"),
-                        "created": model.get("created", 0)
-                    })
-            if models:
-                return models
-        
-        # Return empty list if response format is unexpected
-        return []
-        
-    except Exception as e:
-        # Return empty list if API call fails
-        print(f"Warning: Failed to fetch models from API ({str(e)})")
-        return []
 
 
 def get_multiline_input(console: Console) -> str:
@@ -919,7 +879,7 @@ def get_multiline_input(console: Console) -> str:
     try:
         while True:
             line = input()
-            if not line:  # Empty line ends input
+            if not line:
                 break
             lines.append(line)
     except EOFError:
@@ -944,10 +904,10 @@ def main():
     
     if args.list_models:
         if not args.api_key:
-            print("Error: API key required to fetch models. Set OPENAI_API_KEY in .env or use --api-key")
+            print("Error: API key required. Set OPENAI_API_KEY in .env or use --api-key")
             sys.exit(1)
         
-        print("Fetching available models from API...")
+        print("Fetching available models...")
         models = fetch_available_models(args.base_url, args.api_key)
         
         if models:
@@ -956,106 +916,76 @@ def main():
                 owner = model.get('owned_by', 'unknown')
                 print(f"  - {model['id']:<30} (owned by: {owner})")
         else:
-            print("\nNo models available or failed to fetch from API.")
-            print("Using default models:")
-            print("  - claude-sonnet-4-5")
-            print("  - claude-sonnet-3-5")
-            print("  - claude-opus-4")
-        return
+            print("\nNo models available or failed to fetch.")
+        sys.exit(0)
     
     if not args.api_key:
         print("Error: API key required. Set OPENAI_API_KEY in .env or use --api-key")
         sys.exit(1)
     
     console = Console()
-    
     console.print(f"[bold green]LLM CLI Coding Assistant[/bold green]")
-    console.print(f"Git root: [cyan]{GIT_ROOT}[/cyan]")
-    console.print(f"Model: [cyan]{args.model}[/cyan]")
-    console.print(f"Type [bold]/help[/bold] for commands, [bold]/quit[/bold] to exit\n")
+    console.print(f"[dim]Model: {args.model}[/dim]")
+    console.print(f"[dim]Project root: {GIT_ROOT}[/dim]")
+    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /quit[/dim]\n")
     
-    # Log session start
+    # Initialize
     log_session_start()
-    
     planning_mode = False
-    system_prompt = tools.get_system_prompt(planning_mode)
-    messages = []
     current_model = args.model
-    input_history = FileHistory(GIT_ROOT / '.llode_prompts')
+    system_prompt = tools.get_system_prompt(planning_mode)
+    messages = [{"role": "system", "content": system_prompt}]
+    
+    # Setup history
+    history_file = Path.home() / ".llode_history"
+    history = FileHistory(str(history_file))
     
     while True:
         try:
-            user_input = pt_prompt("You: ", history=input_history).strip()
+            user_input = pt_prompt(
+                "You: ",
+                history=history,
+                multiline=False
+            ).strip()
             
             if not user_input:
                 continue
             
-            # Handle slash commands
+            # Handle commands
             if user_input.startswith('/'):
-                cmd = user_input[1:].lower()
+                cmd = user_input[1:].lower().split()[0]
                 
-                if cmd == 'quit' or cmd == 'exit':
+                if cmd in ('quit', 'exit', 'q'):
+                    console.print("[yellow]Goodbye![/yellow]")
                     break
                 elif cmd == 'help':
-                    console.print("\n[bold]Available commands:[/bold]")
-                    console.print("  /help - Show this help")
-                    console.print("  /model - Change model")
-                    console.print("  /plan - Toggle planning mode (disables file editing)")
-                    console.print("  /clear - Clear conversation history")
-                    console.print("  /multiline - Enter multiline input")
-                    console.print("  /quit - Exit the program\n")
+                    console.print("""
+[bold]Available commands:[/bold]
+  /help      - Show this help
+  /clear     - Clear conversation history
+  /model     - Show current model
+  /plan      - Toggle planning mode (disables file editing)
+  /multiline - Enter multiline input mode
+  /quit      - Exit the assistant
+""")
                     continue
                 elif cmd == 'model':
-                    console.print("\n[bold]Fetching available models...[/bold]")
-                    models = fetch_available_models(args.base_url, args.api_key)
-                    
-                    if models:
-                        console.print(f"\n[bold]Available models ({len(models)}):[/bold]")
-                        for i, model in enumerate(models, 1):
-                            owner = model.get('owned_by', 'unknown')
-                            marker = " [cyan](current)[/cyan]" if model['id'] == current_model else ""
-                            console.print(f"  {i}. {model['id']}{marker}")
-                        
-                        console.print("\nEnter model number or name (or press Enter to cancel): ", end="")
-                        choice = input().strip()
-                        
-                        if choice:
-                            # Try as number first
-                            if choice.isdigit():
-                                idx = int(choice) - 1
-                                if 0 <= idx < len(models):
-                                    current_model = models[idx]['id']
-                                    console.print(f"[green]Model changed to: {current_model}[/green]\n")
-                                else:
-                                    console.print("[red]Invalid model number[/red]\n")
-                            # Try as model name
-                            elif any(m['id'] == choice for m in models):
-                                current_model = choice
-                                console.print(f"[green]Model changed to: {current_model}[/green]\n")
-                            else:
-                                console.print("[red]Model not found. Using entered name anyway.[/red]")
-                                current_model = choice
-                                console.print(f"[yellow]Model changed to: {current_model}[/yellow]\n")
-                    else:
-                        console.print("[yellow]Could not fetch models from API. Enter model name manually:[/yellow] ", end="")
-                        new_model = input().strip()
-                        if new_model:
-                            current_model = new_model
-                            console.print(f"[green]Model changed to: {current_model}[/green]\n")
+                    console.print(f"\n[green]Current model: {current_model}[/green]\n")
                     continue
                 elif cmd == 'plan':
                     planning_mode = not planning_mode
                     system_prompt = tools.get_system_prompt(planning_mode)
+                    messages[0] = {"role": "system", "content": system_prompt}
                     status = "ENABLED" if planning_mode else "DISABLED"
                     color = "yellow" if planning_mode else "green"
                     console.print(f"\n[bold {color}]Planning mode {status}[/bold {color}]")
                     if planning_mode:
-                        console.print("[yellow]File editing is now disabled. Focus on planning and analysis.[/yellow]\n")
+                        console.print("[yellow]File editing is now disabled.[/yellow]\n")
                     else:
                         console.print("[green]File editing is now enabled.[/green]\n")
                     continue
                 elif cmd == 'clear':
-                    messages = []
+                    messages = [{"role": "system", "content": system_prompt}]
                     console.print("[green]Conversation history cleared[/green]\n")
                     continue
                 elif cmd == 'multiline':
@@ -1066,48 +996,36 @@ def main():
                     console.print(f"[red]Unknown command: /{cmd}[/red]\n")
                     continue
             
-            # Log user message
             log_conversation("user", user_input)
-            
-            # Add user message
             messages.append({"role": "user", "content": user_input})
+            messages = manage_context(messages, args.max_tokens)
             
-            # Manage context
-            messages = manage_context(messages, system_prompt)
+            console.print("\n[bold blue]Assistant:[/bold blue]")
             
-            # Prepare messages with system prompt
-            api_messages = [{"role": "system", "content": system_prompt}] + messages
+            response = stream_response(
+                messages,
+                args.base_url,
+                args.api_key,
+                current_model,
+                console,
+                planning_mode
+            )
             
-            # Stream response
-            try:
-                assistant_response = stream_chat(
-                    api_messages,
-                    args.base_url,
-                    args.api_key,
-                    current_model,
-                    console,
-                    planning_mode
-                )
-                
-                # Log assistant response
-                log_conversation("assistant", assistant_response)
-                
-                # Add assistant response to history
-                messages.append({"role": "assistant", "content": assistant_response})
-                
-            except requests.exceptions.RequestException as e:
-                console.print(f"[bold red]API Error: {str(e)}[/bold red]\n")
-                messages.pop()  # Remove user message on error
-        
+            log_conversation("assistant", response)
+            messages.append({"role": "assistant", "content": response})
+            
+            console.print()
+            
         except KeyboardInterrupt:
-            console.print("\n[yellow]Interrupted. Type /quit to exit.[/yellow]\n")
+            console.print("\n[yellow]Use /quit to exit[/yellow]")
             continue
         except EOFError:
+            console.print("\n[yellow]Goodbye![/yellow]")
             break
-    
-    console.print("\n[green]Goodbye![/green]")
+        except Exception as e:
+            console.print(f"\n[red]Error: {str(e)}[/red]\n")
+            continue
 
 
 if __name__ == "__main__":
     main()
-
