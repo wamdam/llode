@@ -120,8 +120,8 @@ RULES:
 3. Parameter values preserve EXACT whitespace - no escaping needed
 4. The boundary ID must NOT appear in any parameter value
 5. If your content contains the boundary string, use a different boundary ID
-6. old_str must match EXACTLY (every space, tab, newline)
-7. If old_str is empty, a new file will be created
+6. For editing: old_str must match EXACTLY (every space, tab, newline)
+7. For creating/overwriting: omit the old_str parameter entirely
 8. All file paths are relative to the project root
 9. Do not access dotfiles
 
@@ -170,7 +170,7 @@ def hello(name="World"):
 --xyz789--
 --TOOL_CALL_END
 
-EXAMPLE - Creating a new file (empty old_str):
+EXAMPLE - Creating/overwriting a file (omit old_str parameter):
 --TOOL_CALL_BEGIN
 Content-Type: tool-call
 Boundary-ID: new456
@@ -183,9 +183,6 @@ edit_file
 Content-Disposition: param; name="path"
 
 new_file.py
---new456
-Content-Disposition: param; name="old_str"
-
 --new456
 Content-Disposition: param; name="new_str"
 
@@ -213,7 +210,8 @@ VERIFICATION CHECKLIST before sending tool call:
 * Each param has --[id] before and Content-Disposition header
 * Ends with --[id]-- then --TOOL_CALL_END
 * Boundary ID doesn't appear in any parameter values
-* old_str matches file content EXACTLY (whitespace matters!)
+* For edits: old_str matches file content EXACTLY (whitespace matters!)
+* For new files: omit old_str parameter entirely to create/overwrite
 
 {tools_desc}
 """
@@ -362,28 +360,32 @@ def read_file(path: str) -> str:
         )
 
 
-@tools.register("edit_file", """Edits a file by replacing old_str with new_str.
+@tools.register("edit_file", """Edits a file by replacing old_str with new_str, OR creates/overwrites a file.
 
 Parameters:
-- path: relative path to the file
-- old_str: exact string to replace (empty to create new file)
-- new_str: replacement string
+- path: relative path to the file (required)
+- new_str: replacement string or new file content (required)
+- old_str: exact string to replace (optional)
 
-If old_str is empty, creates a new file with new_str content.
-The old_str must match EXACTLY including all whitespace and newlines.""")
-def edit_file(path: str, old_str: str, new_str: str) -> str:
-    """Edit a file by replacing old_str with new_str."""
+BEHAVIOR:
+- If old_str is NOT provided: Creates a new file or OVERWRITES existing file with new_str
+- If old_str is provided: Searches for exact match and replaces with new_str
+
+The old_str must match EXACTLY including all whitespace and newlines when provided.""")
+def edit_file(path: str, new_str: str, old_str: str = None) -> str:
+    """Edit a file by replacing old_str with new_str, or create/overwrite if old_str not provided."""
     file_path = validate_path(path)
     
-    if not old_str:
-        if file_path.exists():
-            raise ValueError(f"File already exists: {path}. Use non-empty old_str to edit.")
+    # Create/overwrite file if old_str is not provided
+    if old_str is None:
         file_path.parent.mkdir(parents=True, exist_ok=True)
         file_path.write_text(new_str)
-        return f"Created new file: {path}\n{len(new_str)} bytes written"
+        action = "Overwrote" if file_path.exists() else "Created"
+        return f"{action} file: {path}\n{len(new_str)} bytes written"
     
+    # Edit existing file if old_str is provided
     if not file_path.exists():
-        raise FileNotFoundError(f"File not found: {path}. Use empty old_str to create new file.")
+        raise FileNotFoundError(f"File not found: {path}. Omit old_str parameter to create new file.")
     
     content = file_path.read_text()
     if old_str not in content:
