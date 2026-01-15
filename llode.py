@@ -78,6 +78,22 @@ The edit_file tool is DISABLED. Focus on planning and analysis.
 
 """
         
+        git_workflow = """
+GIT WORKFLOW - MANDATORY:
+
+After ANY successful file modification (edit_file, file_move, file_delete, search_replace):
+1. Use git_add to stage the changed files
+2. Use git_commit with a descriptive message
+
+Example workflow:
+- edit_file() → git_add() → git_commit()
+- file_move() → git_add() → git_commit()
+- search_replace() → git_add() → git_commit()
+
+This ensures all changes are tracked and can be reverted if needed.
+
+"""
+        
         document_workflow = """
 DOCUMENT CONVERSION WORKFLOW:
 
@@ -92,7 +108,7 @@ The system will automatically suggest conversion when you try to read binary fil
 
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
-{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
@@ -245,6 +261,81 @@ Content-Disposition: param; name="tool_name"
 
 list_files
 --list99--
+--TOOL_CALL_END
+
+EXAMPLE - Git workflow (stage and commit):
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: git001
+
+--git001
+Content-Disposition: param; name="tool_name"
+
+git_add
+--git001
+Content-Disposition: param; name="paths"
+
+src/main.py, src/config.py
+--git001--
+--TOOL_CALL_END
+
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: git002
+
+--git002
+Content-Disposition: param; name="tool_name"
+
+git_commit
+--git002
+Content-Disposition: param; name="message"
+
+Add user authentication feature
+--git002--
+--TOOL_CALL_END
+
+EXAMPLE - Moving a file:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: move01
+
+--move01
+Content-Disposition: param; name="tool_name"
+
+file_move
+--move01
+Content-Disposition: param; name="source"
+
+old_location/file.py
+--move01
+Content-Disposition: param; name="destination"
+
+new_location/file.py
+--move01--
+--TOOL_CALL_END
+
+EXAMPLE - Multi-file search and replace:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: search01
+
+--search01
+Content-Disposition: param; name="tool_name"
+
+search_replace
+--search01
+Content-Disposition: param; name="search_term"
+
+old_function_name
+--search01
+Content-Disposition: param; name="replace_term"
+
+new_function_name
+--search01
+Content-Disposition: param; name="file_pattern"
+
+*.py
+--search01--
 --TOOL_CALL_END
 
 VERIFICATION CHECKLIST before sending tool call:
@@ -776,6 +867,231 @@ def convert_from_markdown(path: str, output_format: str) -> str:
         return "❌ Error: Pandoc conversion timed out after 30 seconds"
     except Exception as e:
         return f"❌ Error during conversion: {str(e)}"
+
+
+@tools.register("git_add", """Adds files to git staging area.
+
+Parameters:
+- paths: file paths to add (can be a single path or multiple comma-separated paths)
+
+Adds the specified files to git staging area, ready for commit.""")
+def git_add(paths: str) -> str:
+    """Add files to git staging area."""
+    # Parse paths (can be comma-separated)
+    path_list = [p.strip() for p in paths.split(',')]
+    
+    # Validate all paths first
+    validated_paths = []
+    for path in path_list:
+        try:
+            file_path = validate_path(path)
+            validated_paths.append(str(file_path.relative_to(GIT_ROOT)))
+        except Exception as e:
+            return f"❌ Invalid path '{path}': {str(e)}"
+    
+    try:
+        # Run git add
+        result = subprocess.run(
+            ["git", "add"] + validated_paths,
+            cwd=str(GIT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or "Unknown error"
+            return f"❌ Git add failed:\n{error_msg}"
+        
+        # Show what was added
+        files_str = "\n  ".join(validated_paths)
+        return f"✓ Added to staging area:\n  {files_str}"
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Error: Git add timed out after 10 seconds"
+    except FileNotFoundError:
+        return "❌ Error: git command not found. Is git installed?"
+    except Exception as e:
+        return f"❌ Error during git add: {str(e)}"
+
+
+@tools.register("git_commit", """Creates a git commit with staged changes.
+
+Parameters:
+- message: commit message (required)
+
+Creates a git commit with the currently staged files.
+Returns the commit hash and summary.""")
+def git_commit(message: str) -> str:
+    """Create a git commit with staged changes."""
+    if not message or not message.strip():
+        return "❌ Commit message cannot be empty"
+    
+    try:
+        # Run git commit
+        result = subprocess.run(
+            ["git", "commit", "-m", message],
+            cwd=str(GIT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=10
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or "Unknown error"
+            # Check for common issues
+            if "nothing to commit" in error_msg.lower():
+                return "❌ Nothing to commit. Use git_add to stage files first."
+            return f"❌ Git commit failed:\n{error_msg}"
+        
+        # Get commit hash
+        hash_result = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=str(GIT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=5
+        )
+        
+        commit_hash = hash_result.stdout.strip()[:8] if hash_result.returncode == 0 else "unknown"
+        
+        return f"✓ Commit created successfully\n  Hash: {commit_hash}\n  Message: {message}"
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Error: Git commit timed out"
+    except FileNotFoundError:
+        return "❌ Error: git command not found. Is git installed?"
+    except Exception as e:
+        return f"❌ Error during git commit: {str(e)}"
+
+
+@tools.register("file_move", """Moves or renames a file.
+
+Parameters:
+- source: source file path
+- destination: destination file path
+
+Moves/renames a file from source to destination.
+Creates parent directories if needed.""")
+def file_move(source: str, destination: str) -> str:
+    """Move or rename a file."""
+    try:
+        source_path = validate_path(source)
+        dest_path = validate_path(destination)
+        
+        if not source_path.exists():
+            raise FileNotFoundError(f"Source file not found: {source}")
+        
+        if dest_path.exists():
+            return f"❌ Destination already exists: {destination}"
+        
+        # Create parent directory if needed
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # Move the file
+        source_path.rename(dest_path)
+        
+        return f"✓ Moved: {source} → {destination}"
+        
+    except Exception as e:
+        return f"❌ Error moving file: {str(e)}"
+
+
+@tools.register("file_delete", """Deletes a file.
+
+Parameters:
+- path: file path to delete
+
+Deletes the specified file. Use with caution!""")
+def file_delete(path: str) -> str:
+    """Delete a file."""
+    try:
+        file_path = validate_path(path)
+        
+        if not file_path.exists():
+            raise FileNotFoundError(f"File not found: {path}")
+        
+        if file_path.is_dir():
+            return f"❌ Cannot delete directory with file_delete: {path}"
+        
+        # Delete the file
+        file_path.unlink()
+        
+        return f"✓ Deleted: {path}"
+        
+    except Exception as e:
+        return f"❌ Error deleting file: {str(e)}"
+
+
+@tools.register("search_replace", """Search and replace text across multiple files.
+
+Parameters:
+- search_term: text to search for (required)
+- replace_term: text to replace with (required)
+- file_pattern: file pattern to match (optional, e.g., "*.py" or "src/*.js")
+- case_sensitive: whether to match case (default: true)
+
+Searches for text across files and replaces all occurrences.
+Returns summary of changes made.""")
+def search_replace(search_term: str, replace_term: str, file_pattern: str = "*", case_sensitive: str = "true") -> str:
+    """Search and replace text across multiple files."""
+    if not search_term:
+        return "❌ search_term cannot be empty"
+    
+    case_sensitive_bool = case_sensitive.lower() == "true"
+    gitignore_spec = get_gitignore_spec()
+    all_files = walk_files(gitignore_spec)
+    
+    # Filter files by pattern
+    from fnmatch import fnmatch
+    if file_pattern and file_pattern != "*":
+        matching_files = [f for f in all_files if fnmatch(str(f), file_pattern)]
+    else:
+        matching_files = all_files
+    
+    if not matching_files:
+        return f"❌ No files match pattern: {file_pattern}"
+    
+    # Perform search and replace
+    modified_files = []
+    total_replacements = 0
+    
+    for file_path in matching_files:
+        try:
+            full_path = GIT_ROOT / file_path
+            content = full_path.read_text()
+            
+            # Perform replacement
+            if case_sensitive_bool:
+                new_content = content.replace(search_term, replace_term)
+            else:
+                # Case-insensitive replacement
+                import re
+                pattern = re.compile(re.escape(search_term), re.IGNORECASE)
+                new_content = pattern.sub(replace_term, content)
+            
+            # Check if content changed
+            if new_content != content:
+                replacements = content.count(search_term) if case_sensitive_bool else len(re.findall(re.escape(search_term), content, re.IGNORECASE))
+                full_path.write_text(new_content)
+                modified_files.append((str(file_path), replacements))
+                total_replacements += replacements
+                
+        except (UnicodeDecodeError, PermissionError):
+            continue
+        except Exception as e:
+            return f"❌ Error processing {file_path}: {str(e)}"
+    
+    if not modified_files:
+        return f"❌ No matches found for: {search_term}"
+    
+    # Build summary
+    summary = [f"✓ Replaced '{search_term}' with '{replace_term}' across {len(modified_files)} file(s):"]
+    for file_path, count in modified_files:
+        summary.append(f"  {file_path}: {count} replacement(s)")
+    summary.append(f"\nTotal replacements: {total_replacements}")
+    
+    return "\n".join(summary)
 
 
 class MIMEToolCallParser:
