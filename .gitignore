@@ -1,4 +1,5 @@
 env/
 .env
 .llode_prompts
+llode_todo.json
 llode_log.md
