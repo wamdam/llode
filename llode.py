@@ -355,11 +355,11 @@ VERIFICATION CHECKLIST before sending tool call:
 # Initialize tool registry and git root
 tools = ToolRegistry()
 GIT_ROOT = find_git_root()
-LOG_FILE = GIT_ROOT / "LLODE_LOG.md"
+LOG_FILE = GIT_ROOT / "llode_log.md"
 
 
 def log_conversation(role: str, content: str) -> None:
-    """Log a conversation message to LLODE_LOG.md"""
+    """Log a conversation message to llode_log.md"""
     from datetime import datetime
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -645,18 +645,18 @@ def search_codebase(search_term: str, case_sensitive: str = "false") -> str:
     return "\n".join(results) if results else f"No matches found for: {search_term}"
 
 
-@tools.register("todo_read", """Reads the current todo list from LLODE_TODO.json.
+@tools.register("todo_read", """Reads the current todo list from llode_todo.json.
 
 Returns the current todo list or empty structure if none exists.""")
 def todo_read() -> str:
     """Read the todo list."""
-    todo_path = GIT_ROOT / "LLODE_TODO.json"
+    todo_path = GIT_ROOT / "llode_todo.json"
     if todo_path.exists():
         return todo_path.read_text()
     return json.dumps({"tasks": []}, indent=2)
 
 
-@tools.register("todo_write", """Writes/updates the todo list to LLODE_TODO.json.
+@tools.register("todo_write", """Writes/updates the todo list to llode_todo.json.
 
 Parameters:
 - content: JSON string with the todo list structure
@@ -670,9 +670,9 @@ Expected format:
 
 CRITICAL: Mark in_progress BEFORE starting work. Only mark completed when FULLY done.""")
 def todo_write(content: str) -> str:
-    """Write/update the todo list to LLODE_TODO.json."""
+    """Write/update the todo list to llode_todo.json."""
     json.loads(content)  # Validate JSON
-    (GIT_ROOT / "LLODE_TODO.json").write_text(content)
+    (GIT_ROOT / "llode_todo.json").write_text(content)
     return "Todo list updated successfully"
 
 
