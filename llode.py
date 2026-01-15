@@ -584,7 +584,9 @@ def validate_path(path: str) -> Path:
         raise ValueError(f"Path escapes project root: {path}")
     
     rel_path = full_path.relative_to(GIT_ROOT)
-    if is_dotfile(rel_path):
+    
+    # Allow .gitignore as an exception, but block other dotfiles
+    if is_dotfile(rel_path) and str(rel_path) != ".gitignore":
         raise ValueError(f"Access to dotfiles is not allowed: {path}")
     
     return full_path
