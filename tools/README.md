@@ -143,7 +143,7 @@ Check `/plugins` command output for error messages:
 
 ### Tool Errors at Runtime
 
-- Check llode_log.md for detailed error messages
+- Check .llode/log.md for detailed error messages
 - Ensure tool returns strings, not other types
 - Validate all file paths relative to git_root
 - Handle missing files/data gracefully
