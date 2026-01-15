@@ -11,10 +11,20 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 
 ### 🛠️ File Operations
 - **List Files**: Recursively browse project directory structure
-- **Read Files**: View file contents with automatic gitignore respect
+- **Read Files**: View file contents with optional line ranges and automatic gitignore respect
 - **Edit Files**: AI can modify files with precise search-and-replace operations
 - **Create Files**: Generate new files from scratch
+- **Move/Rename Files**: Relocate or rename files with automatic directory creation
+- **Delete Files**: Remove files safely with git tracking
+- **Search & Replace**: Multi-file search and replace across your codebase
 - **Document Conversion**: Convert between document formats (docx, odt, rtf, html, epub, pdf) and markdown using Pandoc
+
+### 🔄 Git Integration
+- **Automatic Staging**: Files are automatically staged after modifications
+- **Smart Commits**: AI creates meaningful commit messages for changes
+- **Diff Viewing**: Review staged and unstaged changes
+- **Git Workflow**: Seamless integration with version control
+- **Change Tracking**: All file operations are tracked in git history
 
 ### 🔍 Code Search
 - Full-text search across your entire codebase
@@ -98,6 +108,10 @@ You: Create a new Python file called utils.py with a function to calculate facto
 You: Search for all TODO comments in the codebase
 You: Refactor the main.py file to use type hints
 You: What files are in this project?
+You: Read lines 50-100 from main.py
+You: Replace all instances of 'old_function' with 'new_function' in *.py files
+You: Move src/old.py to src/new.py
+You: Show me the git diff of my changes
 ```
 
 ### Special Commands
@@ -112,9 +126,12 @@ You: What files are in this project?
 LLODE uses Claude's tool-calling capabilities to provide the AI assistant with access to:
 
 1. **File System Tools**
-   - `list_files`: Browse project structure
-   - `read_file`: Read file contents (with binary format detection)
-   - `edit_file`: Modify files with exact string matching
+   - `file_list`: Browse project structure
+   - `file_read`: Read file contents (with optional line ranges and binary format detection)
+   - `file_edit`: Modify files with exact string matching or create new files
+   - `file_move`: Move or rename files with automatic directory creation
+   - `file_delete`: Delete files safely
+   - `search_replace`: Search and replace text across multiple files
 
 2. **Document Conversion Tools** (requires Pandoc)
    - `convert_to_markdown`: Convert documents (docx, odt, rtf, html, epub, pdf) to markdown
@@ -129,6 +146,11 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 5. **Task Management Tools**
    - `todo_read`: View current task list
    - `todo_write`: Update task list
+
+6. **Git Integration Tools**
+   - `git_add`: Stage files for commit
+   - `git_commit`: Create commits with meaningful messages
+   - `git_diff`: View staged and unstaged changes
 
 ### Token Budget Management
 
