@@ -12,10 +12,12 @@ import argparse
 import readline
 import shutil
 import subprocess
+import time
 from pathlib import Path
 from typing import List, Dict, Callable, Optional, Tuple
 from dotenv import load_dotenv
 import requests
+from requests.exceptions import ConnectionError, Timeout, RequestException
 from difflib import unified_diff
 import pathspec
 from rich.console import Console
@@ -32,6 +34,16 @@ load_dotenv()
 DEFAULT_BASE_URL = "https://api.mammouth.ai/v1"
 DEFAULT_MODEL = "claude-sonnet-4-5"
 MAX_CONTEXT_TOKENS = 150000
+
+# Retry configuration
+MAX_RETRIES = 5
+RETRY_DELAY = 2  # seconds between retries
+RECOVERABLE_ERRORS = [
+    (ConnectionError, "Connection error"),
+    (ConnectionResetError, "Connection reset"),
+    (Timeout, "Request timeout"),
+    (BrokenPipeError, "Broken pipe"),
+]
 
 
 # Custom Markdown class with left-aligned headings
