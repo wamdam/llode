@@ -958,11 +958,16 @@ Parameters:
 - message: commit message (required)
 
 Creates a git commit with the currently staged files.
+All commits are automatically prefixed with [llode] for tracking.
 Returns the commit hash and summary.""")
 def git_commit(message: str) -> str:
     """Create a git commit with staged changes."""
     if not message or not message.strip():
         return "❌ Commit message cannot be empty"
+    
+    # Prefix message with [llode] if not already present
+    if not message.startswith("[llode]"):
+        message = f"[llode] {message}"
     
     try:
         # Run git commit
