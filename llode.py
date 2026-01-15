@@ -19,7 +19,7 @@ import requests
 from difflib import unified_diff
 import pathspec
 from rich.console import Console
-from rich.markdown import Markdown
+from rich.markdown import Markdown, Heading
 from rich.live import Live
 from rich.text import Text
 from prompt_toolkit import prompt as pt_prompt
@@ -32,6 +32,25 @@ load_dotenv()
 DEFAULT_BASE_URL = "https://api.mammouth.ai/v1"
 DEFAULT_MODEL = "claude-sonnet-4-5"
 MAX_CONTEXT_TOKENS = 150000
+
+
+# Custom Markdown class with left-aligned headings
+class LeftAlignedMarkdown(Markdown):
+    """Markdown renderer with left-aligned headings instead of centered."""
+    
+    elements = {
+        **Markdown.elements,
+    }
+    
+    # Override heading element to use left alignment
+    elements["heading"] = Heading
+    
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Modify heading styles to be left-aligned
+        for element in self.elements.values():
+            if hasattr(element, 'style_name') and 'heading' in str(element):
+                element.justify = "left"
 
 
 def find_git_root() -> Path:
@@ -1455,7 +1474,7 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
         
         display_output = format_tool_output_for_display(tool_name, result, tool_args)
         
-        console.print(Markdown(display_output))
+        console.print(LeftAlignedMarkdown(display_output))
         console.print()
         
         return result
@@ -1592,7 +1611,7 @@ def stream_response(
                         # Complete tool call found
                         live.stop()
                         if display_buffer.strip():
-                            console.print(Markdown(display_buffer))
+                            console.print(LeftAlignedMarkdown(display_buffer))
                         display_buffer = ""
                         
                         tool_result = execute_tool(tool_content, console, planning_mode)
@@ -1606,7 +1625,7 @@ def stream_response(
                         live.start()
                     else:
                         display_buffer += text
-                        live.update(Markdown(display_buffer))
+                        live.update(LeftAlignedMarkdown(display_buffer))
                 
             except json.JSONDecodeError:
                 continue
@@ -1618,11 +1637,11 @@ def stream_response(
         
         # Final update to show everything
         if display_buffer.strip():
-            live.update(Markdown(display_buffer))
+            live.update(LeftAlignedMarkdown(display_buffer))
     
     # Print any remaining content after Live context ends
     if display_buffer.strip():
-        console.print(Markdown(display_buffer))
+        console.print(LeftAlignedMarkdown(display_buffer))
     
     # Handle tool outputs - make follow-up request
     if tool_outputs:
