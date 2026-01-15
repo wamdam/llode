@@ -169,7 +169,7 @@ class CodeIndexer:
         # Insert references
         for ref in extractor.references:
             cursor.execute("""
-                INSERT INTO references (file_id, symbol_name, line_number, context)
+                INSERT INTO "references" (file_id, symbol_name, line_number, context)
                 VALUES (?, ?, ?, ?)
             """, (file_id, ref['symbol_name'], ref['line_number'], ref.get('context', '')))
         
@@ -457,7 +457,7 @@ Returns locations with file paths, line numbers, and context.""")
         if search_type in ("references", "all"):
             cursor.execute("""
                 SELECT f.path, r.line_number
-                FROM references r
+                FROM "references" r
                 JOIN files f ON r.file_id = f.id
                 WHERE r.symbol_name = ?
                 ORDER BY f.path, r.line_number
