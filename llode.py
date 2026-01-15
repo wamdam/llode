@@ -965,6 +965,66 @@ def git_commit(message: str) -> str:
         return f"❌ Error during git commit: {str(e)}"
 
 
+@tools.register("git_diff", """Shows git diff of changes.
+
+Parameters:
+- staged: whether to show staged changes only (default: false)
+- file_path: optional specific file to diff (relative path)
+
+Shows the git diff output. If staged=true, shows diff of staged changes (--cached).
+If staged=false, shows diff of unstaged changes.
+Optionally filter to a specific file path.""")
+def git_diff(staged: str = "false", file_path: str = None) -> str:
+    """Show git diff of changes."""
+    try:
+        # Build git diff command
+        cmd = ["git", "diff"]
+        
+        # Add --cached flag if showing staged changes
+        if staged.lower() == "true":
+            cmd.append("--cached")
+        
+        # Add specific file path if provided
+        if file_path:
+            try:
+                validated_path = validate_path(file_path)
+                rel_path = str(validated_path.relative_to(GIT_ROOT))
+                cmd.append("--")
+                cmd.append(rel_path)
+            except Exception as e:
+                return f"❌ Invalid file path: {str(e)}"
+        
+        # Run git diff
+        result = subprocess.run(
+            cmd,
+            cwd=str(GIT_ROOT),
+            capture_output=True,
+            text=True,
+            timeout=30
+        )
+        
+        if result.returncode != 0:
+            error_msg = result.stderr or "Unknown error"
+            return f"❌ Git diff failed:\n{error_msg}"
+        
+        output = result.stdout.strip()
+        
+        if not output:
+            if staged.lower() == "true":
+                return "No staged changes to show"
+            else:
+                return "No unstaged changes to show"
+        
+        return output
+        
+    except subprocess.TimeoutExpired:
+        return "❌ Error: Git diff timed out after 30 seconds"
+    except FileNotFoundError:
+        return "❌ Error: git command not found. Is git installed?"
+    except Exception as e:
+        return f"❌ Error during git diff: {str(e)}"
+
+
 @tools.register("file_move", """Moves or renames a file.
 
 Parameters:
