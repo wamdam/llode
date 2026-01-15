@@ -424,6 +424,11 @@ class PluginManager:
         self.git_root = git_root
         self.loaded_plugins = {}
         self.plugin_errors = {}
+        self.context = {}  # Store functions that plugins might need
+    
+    def set_context(self, **kwargs):
+        """Set context functions/objects that plugins can access."""
+        self.context.update(kwargs)
     
     def discover_plugins(self) -> List[Path]:
         """Find all Python files in plugins directory."""
@@ -452,6 +457,11 @@ class PluginManager:
                 raise ImportError(f"Could not load spec for {plugin_name}")
             
             module = importlib.util.module_from_spec(spec)
+            
+            # Inject context into module before execution
+            for key, value in self.context.items():
+                setattr(module, key, value)
+            
             spec.loader.exec_module(module)
             
             # Check for required register_tools function
@@ -1911,6 +1921,13 @@ def main():
     
     # Initialize plugin system
     plugin_manager = PluginManager(PLUGINS_DIR, GIT_ROOT)
+    
+    # Provide context functions to plugins
+    plugin_manager.set_context(
+        get_gitignore_spec=get_gitignore_spec,
+        walk_files=walk_files,
+        validate_path=validate_path
+    )
     
     if PLUGINS_DIR.exists():
         console.print("[dim]Loading plugins...[/dim]")

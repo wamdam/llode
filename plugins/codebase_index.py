@@ -339,11 +339,15 @@ Returns summary of indexing results.""")
         from pathlib import Path
         import fnmatch
         
-        # Get gitignore spec from parent scope
+        # Access injected context functions
+        # These are set by PluginManager.set_context() in main
         import sys
-        parent_module = sys.modules['__main__']
-        get_gitignore_spec = parent_module.get_gitignore_spec
-        walk_files = parent_module.walk_files
+        current_module = sys.modules[__name__]
+        get_gitignore_spec = getattr(current_module, 'get_gitignore_spec', None)
+        walk_files = getattr(current_module, 'walk_files', None)
+        
+        if not get_gitignore_spec or not walk_files:
+            return "Error: Plugin context not properly initialized. Required functions not available."
         
         force = force_rebuild.lower() == "true"
         
@@ -518,8 +522,11 @@ Returns dependency information.""")
         try:
             from pathlib import Path
             import sys
-            parent_module = sys.modules['__main__']
-            validate_path = parent_module.validate_path
+            current_module = sys.modules[__name__]
+            validate_path = getattr(current_module, 'validate_path', None)
+            
+            if not validate_path:
+                return "Error: Plugin context not properly initialized. validate_path not available."
             
             full_path = validate_path(path)
             rel_path = str(full_path.relative_to(git_root))
@@ -626,13 +633,14 @@ Returns symbol listing with locations.""")
             try:
                 from pathlib import Path
                 import sys
-                parent_module = sys.modules['__main__']
-                validate_path = parent_module.validate_path
+                current_module = sys.modules[__name__]
+                validate_path = getattr(current_module, 'validate_path', None)
                 
-                full_path = validate_path(path)
-                rel_path = str(full_path.relative_to(git_root))
-                query_parts.append("AND f.path = ?")
-                params.append(rel_path)
+                if validate_path:
+                    full_path = validate_path(path)
+                    rel_path = str(full_path.relative_to(git_root))
+                    query_parts.append("AND f.path = ?")
+                    params.append(rel_path)
             except:
                 pass
         
