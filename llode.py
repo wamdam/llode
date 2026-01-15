@@ -140,39 +140,11 @@ PROJECT-SPECIFIC INSTRUCTIONS:
                 # If we can't read the file, just skip it silently
                 pass
         
-        git_workflow = """
-GIT WORKFLOW - MANDATORY:
-
-After ANY successful file modification (file_edit, file_move, file_delete, search_replace):
-1. Use git_add to stage the changed files
-2. Use git_commit with a descriptive message
-
-Example workflow:
-- file_edit() → git_add() → git_commit()
-- file_move() → git_add() → git_commit()
-- search_replace() → git_add() → git_commit()
-
-This ensures all changes are tracked and can be reverted if needed.
-
-"""
-        
-        document_workflow = """
-DOCUMENT CONVERSION WORKFLOW:
-
-For non-plaintext documents (docx, odt, rtf, html, epub, pdf):
-1. Use convert_to_markdown(path="document.docx") to create document.docx.md
-2. Use file_read or file_edit on the .md version
-3. Optionally use convert_from_markdown to convert back to original format
-
-The system will automatically suggest conversion when you try to read binary files.
-
-"""
-
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
 CONTEXT WINDOW: Do not worry about token limits or context window size. The system automatically manages conversation history and will truncate old messages when needed. Focus on providing complete, helpful responses without self-censoring due to length concerns.
 
-{plugin_section}{local_prompt}{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{plugin_section}{local_prompt}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
