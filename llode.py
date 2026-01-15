@@ -144,6 +144,50 @@ src/main.py
 --abc123--
 --TOOL_CALL_END
 
+EXAMPLE - Reading specific lines from a file:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: abc124
+
+--abc124
+Content-Disposition: param; name="tool_name"
+
+read_file
+--abc124
+Content-Disposition: param; name="path"
+
+src/main.py
+--abc124
+Content-Disposition: param; name="start_line"
+
+10
+--abc124
+Content-Disposition: param; name="end_line"
+
+50
+--abc124--
+--TOOL_CALL_END
+
+EXAMPLE - Reading from a starting line to end of file:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: abc125
+
+--abc125
+Content-Disposition: param; name="tool_name"
+
+read_file
+--abc125
+Content-Disposition: param; name="path"
+
+src/main.py
+--abc125
+Content-Disposition: param; name="start_line"
+
+100
+--abc125--
+--TOOL_CALL_END
+
 EXAMPLE - Editing a file:
 --TOOL_CALL_BEGIN
 Content-Type: tool-call
