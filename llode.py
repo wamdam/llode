@@ -74,7 +74,8 @@ class ToolRegistry:
         if planning_mode:
             planning_prefix = """⚠️ PLANNING MODE ACTIVE ⚠️
 
-The edit_file tool is DISABLED. Focus on planning and analysis.
+All file-modifying tools are DISABLED (edit_file, file_move, file_delete, search_replace, git_add, git_commit).
+Focus on planning, analysis, and read-only operations.
 
 """
         
@@ -1416,8 +1417,10 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
     try:
         tool_name, tool_args = parse_mime_tool_call(tool_content)
         
-        if planning_mode and tool_name == "edit_file":
-            result = "❌ edit_file is disabled in planning mode. Use /plan to toggle planning mode."
+        # Block all modifying tools in planning mode
+        modifying_tools = ["edit_file", "file_move", "file_delete", "search_replace", "git_add", "git_commit"]
+        if planning_mode and tool_name in modifying_tools:
+            result = f"❌ {tool_name} is disabled in planning mode. Use /plan to toggle planning mode."
             console.print(f"[red]{result}[/red]\n")
             return result
         
