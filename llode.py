@@ -21,9 +21,10 @@ from requests.exceptions import ConnectionError, Timeout, RequestException
 from difflib import unified_diff
 import pathspec
 from rich.console import Console
-from rich.markdown import Markdown, Heading
+from rich.markdown import Markdown
 from rich.live import Live
 from rich.text import Text
+from rich.style import Style
 from prompt_toolkit import prompt as pt_prompt
 from prompt_toolkit.history import FileHistory
 
@@ -50,19 +51,18 @@ RECOVERABLE_ERRORS = [
 class LeftAlignedMarkdown(Markdown):
     """Markdown renderer with left-aligned headings instead of centered."""
     
-    elements = {
-        **Markdown.elements,
-    }
-    
-    # Override heading element to use left alignment
-    elements["heading"] = Heading
-    
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        # Modify heading styles to be left-aligned
-        for element in self.elements.values():
-            if hasattr(element, 'style_name') and 'heading' in str(element):
-                element.justify = "left"
+    def __rich_console__(self, console, options):
+        """Override to modify heading justification to left alignment."""
+        from rich.align import Align
+        from rich.text import Text
+        
+        for renderable in super().__rich_console__(console, options):
+            # Check if this is an Align object (headings are wrapped in Align with center)
+            if isinstance(renderable, Align):
+                # Replace centered alignment with left alignment
+                yield Align(renderable.renderable, align="left", style=renderable.style)
+            else:
+                yield renderable
 
 
 def find_git_root() -> Path:
