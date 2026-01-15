@@ -530,7 +530,10 @@ class PluginManager:
 tools = ToolRegistry()
 GIT_ROOT = find_git_root()
 LOG_FILE = GIT_ROOT / "llode_log.md"
-PLUGINS_DIR = GIT_ROOT / "plugins"
+
+# Plugins are loaded from where llode.py is located, not from the project directory
+LLODE_ROOT = Path(__file__).parent.resolve()
+PLUGINS_DIR = LLODE_ROOT / "plugins"
 
 
 def log_conversation(role: str, content: str) -> None:
