@@ -331,10 +331,12 @@ def list_files() -> str:
 
 Parameters:
 - path: relative path to the file
+- start_line: optional starting line number (1-indexed, inclusive)
+- end_line: optional ending line number (1-indexed, inclusive)
 
-Returns the file contents.""")
-def read_file(path: str) -> str:
-    """Read the contents of a file."""
+Returns the file contents or specified line range.""")
+def read_file(path: str, start_line: str = None, end_line: str = None) -> str:
+    """Read the contents of a file, optionally within a line range."""
     file_path = validate_path(path)
     if not file_path.exists():
         raise FileNotFoundError(f"File not found: {path}")
@@ -351,13 +353,49 @@ def read_file(path: str) -> str:
         )
     
     try:
-        return file_path.read_text()
+        content = file_path.read_text()
+        
+        # If no line range specified, return full content
+        if start_line is None and end_line is None:
+            return content
+        
+        # Parse line numbers
+        lines = content.splitlines(keepends=True)
+        total_lines = len(lines)
+        
+        # Convert to integers and validate
+        start = int(start_line) if start_line is not None else 1
+        end = int(end_line) if end_line is not None else total_lines
+        
+        if start < 1:
+            raise ValueError(f"start_line must be >= 1, got {start}")
+        if end < start:
+            raise ValueError(f"end_line ({end}) must be >= start_line ({start})")
+        if start > total_lines:
+            raise ValueError(f"start_line ({start}) exceeds file length ({total_lines} lines)")
+        
+        # Adjust end if it exceeds file length
+        end = min(end, total_lines)
+        
+        # Extract the requested lines (convert to 0-indexed)
+        selected_lines = lines[start - 1:end]
+        result = ''.join(selected_lines)
+        
+        # Add context information
+        if start_line is not None or end_line is not None:
+            header = f"Lines {start}-{end} of {total_lines}:\n"
+            return header + result
+        
+        return result
+        
     except UnicodeDecodeError:
         return (
             f"⚠️  Cannot read file as text: {path}\n\n"
             f"This file appears to be binary or uses an unsupported encoding.\n"
             f"If this is a document file, try using convert_to_markdown."
         )
+    except ValueError as e:
+        raise ValueError(f"Invalid line range: {str(e)}")
 
 
 @tools.register("edit_file", """Edits a file by replacing old_str with new_str, OR creates/overwrites a file.
