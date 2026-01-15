@@ -1120,6 +1120,11 @@ def stream_response(
                         tool_result = execute_tool(tool_content, console, planning_mode)
                         tool_outputs.append((tool_content, tool_result))
                         
+                        # If tool execution failed, interrupt streaming to let LLM read error
+                        if tool_result.startswith("❌"):
+                            console.print("[yellow]⚠️  Tool error detected - interrupting stream to report error[/yellow]\n")
+                            break
+                        
                         live.start()
                     else:
                         display_buffer += text
