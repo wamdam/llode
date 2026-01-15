@@ -529,7 +529,7 @@ class PluginManager:
 # Initialize tool registry and git root
 tools = ToolRegistry()
 GIT_ROOT = find_git_root()
-LOG_FILE = GIT_ROOT / "llode_log.md"
+LOG_FILE = GIT_ROOT / ".llode" / "log.md"
 
 # Tools are loaded from where llode.py is located, not from the project directory
 LLODE_ROOT = Path(__file__).parent.resolve()
@@ -537,10 +537,13 @@ PLUGINS_DIR = LLODE_ROOT / "tools"
 
 
 def log_conversation(role: str, content: str) -> None:
-    """Log a conversation message to llode_log.md"""
+    """Log a conversation message to .llode/log.md"""
     from datetime import datetime
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Ensure .llode directory exists
+    LOG_FILE.parent.mkdir(exist_ok=True)
     
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"\n---\n\n")
@@ -553,6 +556,9 @@ def log_session_start() -> None:
     from datetime import datetime
     
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    # Ensure .llode directory exists
+    LOG_FILE.parent.mkdir(exist_ok=True)
     
     with open(LOG_FILE, "a", encoding="utf-8") as f:
         f.write(f"\n\n{'='*80}\n")
