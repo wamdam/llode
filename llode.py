@@ -441,6 +441,7 @@ class PluginManager:
     def load_plugin(self, plugin_path: Path, registry: 'ToolRegistry') -> bool:
         """Load a single plugin and register its tools."""
         import importlib.util
+        import traceback
         
         plugin_name = plugin_path.stem
         
@@ -470,7 +471,8 @@ class PluginManager:
             return True
             
         except Exception as e:
-            self.plugin_errors[plugin_name] = str(e)
+            # Capture full traceback for better debugging
+            self.plugin_errors[plugin_name] = f"{str(e)}\n{traceback.format_exc()}"
             return False
     
     def load_all_plugins(self, registry: 'ToolRegistry', console: Optional['Console'] = None) -> Tuple[int, int]:
