@@ -1758,7 +1758,7 @@ def main():
     console.print(f"[bold green]LLM CLI Coding Assistant[/bold green]")
     console.print(f"[dim]Model: {args.model}[/dim]")
     console.print(f"[dim]Project root: {GIT_ROOT}[/dim]")
-    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /quit[/dim]\n")
+    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /undo, /quit[/dim]\n")
     
     # Setup history
     history_file = Path.home() / ".llode_history"
@@ -1790,6 +1790,7 @@ def main():
   /model     - Change model
   /plan      - Toggle planning mode (disables file editing)
   /multiline - Enter multiline input mode
+  /undo      - Revert a previous commit
   /quit      - Exit the assistant
 """)
                     continue
@@ -1851,6 +1852,127 @@ def main():
                     user_input = get_multiline_input(console)
                     if not user_input:
                         continue
+                elif cmd == 'undo':
+                    # Get recent commits (llode commits and their reverts)
+                    try:
+                        # Get commits with [llode] in message
+                        result = subprocess.run(
+                            ["git", "log", "--grep=\\[llode\\]", "--format=%h|%s|%ar", "-20"],
+                            cwd=str(GIT_ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        if result.returncode != 0:
+                            console.print("[red]❌ Failed to get git log[/red]\n")
+                            continue
+                        
+                        commits = []
+                        for line in result.stdout.strip().split('\n'):
+                            if line:
+                                parts = line.split('|', 2)
+                                if len(parts) == 3:
+                                    commits.append({
+                                        'hash': parts[0],
+                                        'message': parts[1],
+                                        'time': parts[2]
+                                    })
+                        
+                        if not commits:
+                            console.print("[yellow]No llode commits found[/yellow]\n")
+                            continue
+                        
+                        console.print("\n[bold]Recent commits:[/bold]")
+                        for i, commit in enumerate(commits, 1):
+                            console.print(f"  {i}. {commit['hash']} {commit['message']} [dim]({commit['time']})[/dim]")
+                        
+                        console.print("\nEnter number or hash to revert (or press Enter to cancel): ", end="")
+                        choice = input().strip()
+                        
+                        if not choice:
+                            console.print("[yellow]Cancelled[/yellow]\n")
+                            continue
+                        
+                        # Resolve choice to hash
+                        commit_hash = None
+                        if choice.isdigit():
+                            idx = int(choice) - 1
+                            if 0 <= idx < len(commits):
+                                commit_hash = commits[idx]['hash']
+                            else:
+                                console.print("[red]Invalid commit number[/red]\n")
+                                continue
+                        else:
+                            # Try as hash
+                            commit_hash = choice
+                        
+                        # Check for uncommitted changes
+                        status_result = subprocess.run(
+                            ["git", "status", "--porcelain"],
+                            cwd=str(GIT_ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        
+                        if status_result.stdout.strip():
+                            console.print("[yellow]⚠️  Warning: You have uncommitted changes.[/yellow]")
+                            console.print("The revert will be committed automatically.")
+                            console.print("Continue? (y/N): ", end="")
+                            confirm = input().strip().lower()
+                            if confirm != 'y':
+                                console.print("[yellow]Cancelled[/yellow]\n")
+                                continue
+                        
+                        # Perform git revert
+                        console.print(f"\n[cyan]Reverting commit {commit_hash}...[/cyan]")
+                        revert_result = subprocess.run(
+                            ["git", "revert", "--no-edit", commit_hash],
+                            cwd=str(GIT_ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=30
+                        )
+                        
+                        if revert_result.returncode != 0:
+                            error_msg = revert_result.stderr or revert_result.stdout
+                            console.print(f"[red]❌ Revert failed:[/red]\n{error_msg}\n")
+                            
+                            # Check if it's a merge conflict
+                            if "conflict" in error_msg.lower():
+                                console.print("[yellow]Resolve conflicts manually and run: git revert --continue[/yellow]\n")
+                            continue
+                        
+                        # Get the reverted commit message for context
+                        msg_result = subprocess.run(
+                            ["git", "log", "-1", "--format=%s", commit_hash],
+                            cwd=str(GIT_ROOT),
+                            capture_output=True,
+                            text=True,
+                            timeout=5
+                        )
+                        reverted_msg = msg_result.stdout.strip() if msg_result.returncode == 0 else "unknown"
+                        
+                        console.print(f"[green]✓ Reverted: {commit_hash} {reverted_msg}[/green]\n")
+                        
+                        # Add system message to conversation to inform the LLM
+                        system_msg = f"System: Reverted commit {commit_hash}: {reverted_msg}\nThe codebase has been restored to the state before this commit."
+                        messages.append({
+                            "role": "user",
+                            "content": system_msg
+                        })
+                        log_conversation("system", system_msg)
+                        
+                        console.print("[dim]LLM has been notified of the revert[/dim]\n")
+                        
+                    except subprocess.TimeoutExpired:
+                        console.print("[red]❌ Git operation timed out[/red]\n")
+                    except FileNotFoundError:
+                        console.print("[red]❌ git command not found[/red]\n")
+                    except Exception as e:
+                        console.print(f"[red]❌ Error: {str(e)}[/red]\n")
+                    continue
                 else:
                     console.print(f"[red]Unknown command: /{cmd}[/red]\n")
                     continue
