@@ -27,8 +27,11 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 - **Change Tracking**: All file operations are tracked in git history
 - **Undo/Redo**: Revert commits using `/undo` command with git-native revert operations
 
-### 🔍 Code Search
-- Full-text search across your entire codebase
+### 🔍 Code Search & Semantic Understanding
+- **Text Search**: Full-text search across your entire codebase
+- **Semantic Search**: Find symbols (functions, classes) by name
+- **Dependency Analysis**: Understand import relationships
+- **Symbol Listing**: Browse all functions/classes in files
 - Case-sensitive and case-insensitive search options
 - Respects `.gitignore` patterns
 - Excludes dotfiles automatically
@@ -121,6 +124,7 @@ You: Show me the git diff of my changes
 - `/clear` - Clear conversation history
 - `/model` - Change AI model
 - `/plan` - Toggle planning mode (disables file editing for exploration)
+- `/plugins` - Show loaded plugins and their status
 - `/multiline` - Enter multiline input mode
 - `/undo` - Revert a previous commit (shows recent llode commits)
 - `/quit` - Exit the assistant
@@ -148,18 +152,39 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 3. **Search Tools**
    - `search_codebase`: Full-text search with context
 
-4. **Web Tools**
+4. **Semantic Code Tools** (via plugin)
+   - `index_codebase`: Build semantic index of Python code
+   - `find_symbol`: Find function/class definitions and references
+   - `analyze_dependencies`: Show import relationships
+   - `list_symbols`: Browse all symbols in files
+
+5. **Web Tools**
    - `fetch_url`: Retrieve content from URLs
 
-5. **Task Management Tools**
+6. **Task Management Tools**
    - `todo_read`: View current task list
    - `todo_write`: Update task list
 
-6. **Git Integration Tools**
+7. **Git Integration Tools**
    - `git_add`: Stage files for commit
    - `git_commit`: Create commits with meaningful messages (auto-prefixed with `[llode]`)
    - `git_diff`: View staged and unstaged changes
    - `/undo` command: Revert commits using git revert
+
+### Plugin System
+
+LLODE supports plugins to extend functionality:
+
+- **Location**: Plugins are stored in the `plugins/` directory
+- **Auto-loading**: All `.py` files in `plugins/` are loaded at startup
+- **Registration**: Plugins expose a `register_tools(registry, git_root)` function
+- **Tool Integration**: Plugin tools work exactly like built-in tools
+- **Error Handling**: Failed plugins are reported but don't prevent startup
+
+**Creating Plugins**: See `plugins/README.md` for documentation on creating custom plugins.
+
+**Included Plugins**:
+- `codebase_index.py`: Semantic code understanding and search for Python projects
 
 ### Token Budget Management
 
