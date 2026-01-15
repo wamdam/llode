@@ -145,6 +145,8 @@ The system will automatically suggest conversion when you try to read binary fil
 
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
+CONTEXT WINDOW: Do not worry about token limits or context window size. The system automatically manages conversation history and will truncate old messages when needed. Focus on providing complete, helpful responses without self-censoring due to length concerns.
+
 {local_prompt}{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
