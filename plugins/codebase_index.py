@@ -77,7 +77,7 @@ class CodeIndexer:
         
         # References table (where symbols are used)
         cursor.execute("""
-            CREATE TABLE IF NOT EXISTS references (
+            CREATE TABLE IF NOT EXISTS "references" (
                 id INTEGER PRIMARY KEY,
                 file_id INTEGER,
                 symbol_name TEXT,
@@ -91,7 +91,7 @@ class CodeIndexer:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_symbols_type ON symbols(type)")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_imports_path ON imports(imported_path)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_references_symbol ON references(symbol_name)")
+        cursor.execute('CREATE INDEX IF NOT EXISTS idx_references_symbol ON "references"(symbol_name)')
         
         conn.commit()
         conn.close()
