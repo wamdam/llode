@@ -21,10 +21,11 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 
 ### 🔄 Git Integration
 - **Automatic Staging**: Files are automatically staged after modifications
-- **Smart Commits**: AI creates meaningful commit messages for changes
+- **Smart Commits**: AI creates meaningful commit messages for changes (automatically prefixed with `[llode]`)
 - **Diff Viewing**: Review staged and unstaged changes
 - **Git Workflow**: Seamless integration with version control
 - **Change Tracking**: All file operations are tracked in git history
+- **Undo/Redo**: Revert commits using `/undo` command with git-native revert operations
 
 ### 🔍 Code Search
 - Full-text search across your entire codebase
@@ -116,8 +117,15 @@ You: Show me the git diff of my changes
 
 ### Special Commands
 
-- **Exit**: Type `exit`, `quit`, or press `Ctrl+D` to quit
-- **Clear History**: The assistant automatically manages conversation history
+- `/help` - Show available commands
+- `/clear` - Clear conversation history
+- `/model` - Change AI model
+- `/plan` - Toggle planning mode (disables file editing for exploration)
+- `/multiline` - Enter multiline input mode
+- `/undo` - Revert a previous commit (shows recent llode commits)
+- `/quit` - Exit the assistant
+
+**Note**: You can also use `exit`, `quit`, or press `Ctrl+D` to quit
 
 ## How It Works
 
@@ -149,8 +157,9 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 
 6. **Git Integration Tools**
    - `git_add`: Stage files for commit
-   - `git_commit`: Create commits with meaningful messages
+   - `git_commit`: Create commits with meaningful messages (auto-prefixed with `[llode]`)
    - `git_diff`: View staged and unstaged changes
+   - `/undo` command: Revert commits using git revert
 
 ### Token Budget Management
 
@@ -191,6 +200,42 @@ Example todo structure:
     "priority": "medium"
   }
 ]
+```
+
+### Git Undo/Redo System
+
+LLODE provides a safe, git-native undo system:
+
+**Using /undo**:
+1. Type `/undo` to see recent llode commits
+2. Select a commit by number or hash
+3. LLODE creates a git revert commit (safe for multi-user repos)
+4. The LLM is automatically notified of the revert
+
+**Redoing Changes**:
+- Simply use `/undo` again on the revert commit
+- This reverts the revert, effectively redoing the original change
+
+**Benefits**:
+- ✅ Safe for collaborative repositories (uses `git revert`, not `git reset`)
+- ✅ Preserves full git history
+- ✅ LLM maintains awareness of all changes and reverts
+- ✅ Multiple undo/redo operations supported
+- ✅ Handles merge conflicts gracefully
+
+Example:
+```
+You: /undo
+
+Recent commits:
+  1. 7ce8580a [llode] Implement /undo command (1 minute ago)
+  2. 7f56fd2e [llode] Add user authentication (5 minutes ago)
+  3. abc1234 [llode] Refactor login module (1 hour ago)
+
+Enter number or hash to revert: 2
+
+✓ Reverted: 7f56fd2e [llode] Add user authentication
+LLM has been notified of the revert
 ```
 
 ### Context-Aware Editing
