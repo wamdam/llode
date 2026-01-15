@@ -1,4 +1,4 @@
 env/
 .env
 .llode_prompts
-LLODE_LOG.md
+llode_log.md
