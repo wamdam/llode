@@ -173,18 +173,78 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 
 ### Plugin System
 
-LLODE supports plugins to extend functionality:
+LLODE features a powerful plugin architecture that allows extending functionality with custom tools. Plugins are first-class citizens that integrate seamlessly with the core system.
 
-- **Location**: Plugins are stored in the `plugins/` directory
-- **Auto-loading**: All `.py` files in `plugins/` are loaded at startup
-- **Registration**: Plugins expose a `register_tools(registry, git_root)` function
-- **Tool Integration**: Plugin tools work exactly like built-in tools
-- **Error Handling**: Failed plugins are reported but don't prevent startup
+#### How Plugins Work
 
-**Creating Plugins**: See `plugins/README.md` for documentation on creating custom plugins.
+1. **Discovery**: At startup, LLODE scans the `plugins/` directory for all `.py` files (excluding files starting with `_`)
+2. **Loading**: Each plugin module is loaded dynamically using Python's `importlib`
+3. **Context Injection**: Core functions (`validate_path`, `get_gitignore_spec`, `walk_files`, `is_dotfile`) are injected into plugin modules before execution
+4. **Registration**: Plugins call `registry.register(name, description)` to add tools using the same `ToolRegistry` API as core tools
+5. **Integration**: Plugin tools appear in the system prompt and are available to the LLM just like built-in tools
+6. **Error Handling**: Failed plugins are reported with full tracebacks but don't prevent LLODE from starting
 
-**Included Plugins**:
-- `codebase_index.py`: Semantic code understanding and search for Python projects
+#### Plugin Architecture
+
+**PluginManager** (`llode.py`):
+- Discovers plugins in the `plugins/` directory relative to `llode.py` (not the project directory)
+- Manages plugin lifecycle (loading, error tracking, status reporting)
+- Injects context (core utility functions) into plugin modules
+- Tracks loaded plugins and their metadata
+
+**ToolRegistry**:
+- Centralized registry for all tools (core and plugin)
+- Generates tool descriptions for the LLM system prompt
+- Provides decorator pattern for clean tool registration
+
+**Plugin Requirements**:
+- Must define `register_tools(registry, git_root)` function
+- Should include module docstring (shown in `/plugins` command)
+- Must return strings from tool functions (for LLM consumption)
+- Should handle errors gracefully and validate inputs
+
+#### Plugin Features
+
+- **Access to Core Utilities**: Plugins can use `validate_path()`, `get_gitignore_spec()`, `walk_files()`, and `is_dotfile()` functions
+- **Project Awareness**: Plugins receive `git_root` parameter to work within the project context
+- **Status Reporting**: Use `/plugins` command to see loaded plugins and any errors
+- **Hot Description Updates**: Plugin tool descriptions are included in the system prompt generation
+
+#### Creating Plugins
+
+See `plugins/README.md` for detailed documentation and `plugins/EXAMPLE_PLUGIN.md` for step-by-step tutorials.
+
+Basic plugin structure:
+```python
+"""
+Plugin description (shown in /plugins command).
+"""
+
+def register_tools(registry, git_root):
+    @registry.register("my_tool", """Tool description for LLM.
+    
+    Parameters:
+    - param: description
+    
+    Returns what the tool does.""")
+    def my_tool(param: str):
+        # Implementation
+        return "result"
+```
+
+#### Included Plugins
+
+- **`codebase_index.py`**: Semantic code understanding and search for Python projects
+  - Tools: `index_codebase`, `find_symbol`, `analyze_dependencies`, `list_symbols`
+  - Storage: Creates `.llode/index.db` SQLite database
+  - Dependencies: None (uses stdlib only)
+
+#### Plugin Storage
+
+Plugins should store persistent data in `.llode/` directory:
+- Example: `.llode/plugin_name.db` for SQLite databases
+- Example: `.llode/plugin_name/` for file-based storage
+- The `.llode/` directory is automatically created if needed
 
 ### Token Budget Management
 
