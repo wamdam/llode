@@ -14,7 +14,10 @@ import shutil
 import subprocess
 import time
 from pathlib import Path
-from typing import List, Dict, Callable, Optional, Tuple
+from typing import List, Dict, Callable, Optional, Tuple, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from rich.console import Console
 from dotenv import load_dotenv
 import requests
 from requests.exceptions import ConnectionError, Timeout, RequestException
@@ -97,9 +100,14 @@ class ToolRegistry:
             lines.append(f"## {name}\n{desc}\n")
         return "\n".join(lines)
     
-    def get_system_prompt(self, planning_mode: bool = False) -> str:
+    def get_system_prompt(self, planning_mode: bool = False, plugin_info: str = "") -> str:
         """Generate system prompt with tool descriptions."""
         tools_desc = self.get_tools_description()
+        
+        # Add plugin information if available
+        plugin_section = ""
+        if plugin_info:
+            plugin_section = f"\nPLUGINS:\n\n{plugin_info}\n\n"
         
         planning_prefix = ""
         if planning_mode:
@@ -159,7 +167,7 @@ The system will automatically suggest conversion when you try to read binary fil
 
 CONTEXT WINDOW: Do not worry about token limits or context window size. The system automatically manages conversation history and will truncate old messages when needed. Focus on providing complete, helpful responses without self-censoring due to length concerns.
 
-{local_prompt}{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{plugin_section}{local_prompt}{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
@@ -403,10 +411,109 @@ VERIFICATION CHECKLIST before sending tool call:
 """
 
 
+class PluginManager:
+    """Manages loading and registration of plugins."""
+    
+    def __init__(self, plugins_dir: Path, git_root: Path):
+        self.plugins_dir = plugins_dir
+        self.git_root = git_root
+        self.loaded_plugins = {}
+        self.plugin_errors = {}
+    
+    def discover_plugins(self) -> List[Path]:
+        """Find all Python files in plugins directory."""
+        if not self.plugins_dir.exists():
+            return []
+        
+        plugins = []
+        for file_path in self.plugins_dir.glob("*.py"):
+            if file_path.name.startswith("_"):
+                continue  # Skip __init__.py and private modules
+            plugins.append(file_path)
+        
+        return sorted(plugins)
+    
+    def load_plugin(self, plugin_path: Path, registry: 'ToolRegistry') -> bool:
+        """Load a single plugin and register its tools."""
+        import importlib.util
+        
+        plugin_name = plugin_path.stem
+        
+        try:
+            # Load the plugin module
+            spec = importlib.util.spec_from_file_location(plugin_name, plugin_path)
+            if spec is None or spec.loader is None:
+                raise ImportError(f"Could not load spec for {plugin_name}")
+            
+            module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(module)
+            
+            # Check for required register_tools function
+            if not hasattr(module, 'register_tools'):
+                raise AttributeError(f"Plugin {plugin_name} missing register_tools() function")
+            
+            # Call the registration function
+            module.register_tools(registry, self.git_root)
+            
+            # Store plugin info
+            self.loaded_plugins[plugin_name] = {
+                'path': plugin_path,
+                'module': module,
+                'doc': module.__doc__ or "No description"
+            }
+            
+            return True
+            
+        except Exception as e:
+            self.plugin_errors[plugin_name] = str(e)
+            return False
+    
+    def load_all_plugins(self, registry: 'ToolRegistry', console: Optional['Console'] = None) -> Tuple[int, int]:
+        """Load all plugins from plugins directory. Returns (loaded, failed) counts."""
+        plugins = self.discover_plugins()
+        
+        if not plugins:
+            return 0, 0
+        
+        loaded = 0
+        failed = 0
+        
+        for plugin_path in plugins:
+            if self.load_plugin(plugin_path, registry):
+                loaded += 1
+                if console:
+                    console.print(f"[dim]  ✓ {plugin_path.stem}[/dim]")
+            else:
+                failed += 1
+                if console:
+                    error = self.plugin_errors.get(plugin_path.stem, "Unknown error")
+                    console.print(f"[dim]  ✗ {plugin_path.stem}: {error}[/dim]")
+        
+        return loaded, failed
+    
+    def get_plugin_info(self) -> str:
+        """Get formatted information about loaded plugins."""
+        if not self.loaded_plugins:
+            return "No plugins loaded"
+        
+        lines = ["Loaded plugins:"]
+        for name, info in sorted(self.loaded_plugins.items()):
+            doc = info['doc'].strip().split('\n')[0]  # First line only
+            lines.append(f"  • {name}: {doc}")
+        
+        if self.plugin_errors:
+            lines.append("\nFailed to load:")
+            for name, error in sorted(self.plugin_errors.items()):
+                lines.append(f"  • {name}: {error}")
+        
+        return '\n'.join(lines)
+
+
 # Initialize tool registry and git root
 tools = ToolRegistry()
 GIT_ROOT = find_git_root()
 LOG_FILE = GIT_ROOT / "llode_log.md"
+PLUGINS_DIR = GIT_ROOT / "plugins"
 
 
 def log_conversation(role: str, content: str) -> None:
@@ -1763,11 +1870,25 @@ def main():
     
     console = Console()
     
+    # Initialize plugin system
+    plugin_manager = PluginManager(PLUGINS_DIR, GIT_ROOT)
+    
+    if PLUGINS_DIR.exists():
+        console.print("[dim]Loading plugins...[/dim]")
+        loaded, failed = plugin_manager.load_all_plugins(tools, console)
+        if loaded > 0:
+            console.print(f"[dim]Loaded {loaded} plugin(s)[/dim]")
+        if failed > 0:
+            console.print(f"[yellow]Failed to load {failed} plugin(s)[/yellow]")
+        console.print()
+    
+    plugin_info = plugin_manager.get_plugin_info() if plugin_manager.loaded_plugins else ""
+    
     # Initialize
     log_session_start()
     planning_mode = False
     current_model = args.model
-    system_prompt = tools.get_system_prompt(planning_mode)
+    system_prompt = tools.get_system_prompt(planning_mode, plugin_info)
     messages = [{"role": "system", "content": system_prompt}]
     
     # Handle single prompt mode
@@ -1794,7 +1915,7 @@ def main():
     console.print(f"[bold green]LLM CLI Coding Assistant[/bold green]")
     console.print(f"[dim]Model: {args.model}[/dim]")
     console.print(f"[dim]Project root: {GIT_ROOT}[/dim]")
-    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /undo, /quit[/dim]\n")
+    console.print("[dim]Commands: /help, /clear, /model, /plan, /plugins, /multiline, /undo, /quit[/dim]\n")
     
     # Setup history
     history_file = Path.home() / ".llode_history"
@@ -1825,10 +1946,15 @@ def main():
   /clear     - Clear conversation history
   /model     - Change model
   /plan      - Toggle planning mode (disables file editing)
+  /plugins   - Show loaded plugins
   /multiline - Enter multiline input mode
   /undo      - Revert a previous commit
   /quit      - Exit the assistant
 """)
+                    continue
+                elif cmd == 'plugins':
+                    info = plugin_manager.get_plugin_info()
+                    console.print(f"\n[bold]Plugin Status:[/bold]\n{info}\n")
                     continue
                 elif cmd == 'model':
                     console.print("\n[bold]Fetching available models...[/bold]")
@@ -1870,7 +1996,7 @@ def main():
                     continue
                 elif cmd == 'plan':
                     planning_mode = not planning_mode
-                    system_prompt = tools.get_system_prompt(planning_mode)
+                    system_prompt = tools.get_system_prompt(planning_mode, plugin_info)
                     messages[0] = {"role": "system", "content": system_prompt}
                     status = "ENABLED" if planning_mode else "DISABLED"
                     color = "yellow" if planning_mode else "green"
