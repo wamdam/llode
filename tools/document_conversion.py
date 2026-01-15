@@ -42,7 +42,14 @@ Converts documents to markdown:
 Creates a new file with .md extension (e.g., document.pdf -> document.pdf.md).
 Returns the path to the generated markdown file.
 
-Requires pandoc for non-PDF files, and pdftotext for PDF files.""")
+Requires pandoc for non-PDF files, and pdftotext for PDF files.
+
+WORKFLOW for non-plaintext documents (docx, odt, rtf, html, epub, pdf):
+1. Use convert_to_markdown(path="document.docx") to create document.docx.md
+2. Use file_read or file_edit on the .md version
+3. Optionally use convert_from_markdown to convert back to original format
+
+The system will automatically suggest conversion when you try to read binary files.""")
     def convert_to_markdown(path: str) -> str:
         """Convert a document to markdown using pandoc or pdftotext."""
         file_path = validate_path(path)
