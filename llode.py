@@ -78,6 +78,23 @@ The edit_file tool is DISABLED. Focus on planning and analysis.
 
 """
         
+        # Check for custom local prompt
+        local_prompt = ""
+        local_prompt_path = GIT_ROOT / "llode_prompt.txt"
+        if local_prompt_path.exists():
+            try:
+                local_prompt_content = local_prompt_path.read_text(encoding='utf-8').strip()
+                if local_prompt_content:
+                    local_prompt = f"""
+PROJECT-SPECIFIC INSTRUCTIONS:
+
+{local_prompt_content}
+
+"""
+            except Exception as e:
+                # If we can't read the file, just skip it silently
+                pass
+        
         git_workflow = """
 GIT WORKFLOW - MANDATORY:
 
@@ -108,7 +125,7 @@ The system will automatically suggest conversion when you try to read binary fil
 
         return f"""{planning_prefix}You are a coding assistant with access to file manipulation tools.
 
-{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{local_prompt}{git_workflow}{document_workflow}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
