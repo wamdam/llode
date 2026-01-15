@@ -20,7 +20,7 @@ if TYPE_CHECKING:
     from rich.console import Console
 from dotenv import load_dotenv
 import requests
-from requests.exceptions import ConnectionError, Timeout, RequestException
+from requests.exceptions import ConnectionError, Timeout, RequestException, HTTPError
 from difflib import unified_diff
 import pathspec
 from rich.console import Console
@@ -41,7 +41,12 @@ MAX_CONTEXT_TOKENS = 150000
 
 # Retry configuration
 MAX_RETRIES = 5
-RETRY_DELAY = 2  # seconds between retries
+INITIAL_RETRY_DELAY = 1  # Initial delay in seconds
+MAX_RETRY_DELAY = 60  # Maximum delay in seconds
+
+# Recoverable HTTP status codes
+RECOVERABLE_HTTP_CODES = {429, 500, 502, 503, 504}
+
 RECOVERABLE_ERRORS = [
     (ConnectionError, "Connection error"),
     (ConnectionResetError, "Connection reset"),
@@ -1706,14 +1711,46 @@ def stream_response(
             response = requests.post(url, headers=headers, json=data, stream=True, timeout=60)
             response.raise_for_status()
             break  # Success, exit retry loop
+        except HTTPError as e:
+            # Check if this is a recoverable HTTP error
+            if e.response is not None and e.response.status_code in RECOVERABLE_HTTP_CODES:
+                retry_count += 1
+                if retry_count > MAX_RETRIES:
+                    console.print(f"\n[red]✖ HTTP {e.response.status_code} error after {MAX_RETRIES} retries[/red]")
+                    raise
+                
+                # Calculate exponential backoff delay
+                delay = min(INITIAL_RETRY_DELAY * (2 ** (retry_count - 1)), MAX_RETRY_DELAY)
+                
+                # Check for Retry-After header (common with 429 responses)
+                retry_after = e.response.headers.get('Retry-After')
+                if retry_after:
+                    try:
+                        # Retry-After can be seconds or HTTP date
+                        delay = min(int(retry_after), MAX_RETRY_DELAY)
+                    except ValueError:
+                        pass  # If not an integer, use calculated delay
+                
+                status_code = e.response.status_code
+                status_text = "Rate limited" if status_code == 429 else f"HTTP {status_code}"
+                console.print(f"\r[yellow]⚠ {status_text}, retry {retry_count}/{MAX_RETRIES} in {delay}s...[/yellow]", end="")
+                time.sleep(delay)
+            else:
+                # Non-recoverable HTTP error
+                console.print(f"\n[red]✖ HTTP error: {str(e)}[/red]")
+                raise
         except tuple(err[0] for err in RECOVERABLE_ERRORS) as e:
             retry_count += 1
             if retry_count > MAX_RETRIES:
                 console.print(f"\n[red]✖ Connection failed after {MAX_RETRIES} retries: {str(e)}[/red]")
                 raise
+            
+            # Calculate exponential backoff delay
+            delay = min(INITIAL_RETRY_DELAY * (2 ** (retry_count - 1)), MAX_RETRY_DELAY)
+            
             # Show retry counter on same line
-            console.print(f"\r[yellow]⚠ Connection error, retry {retry_count}/{MAX_RETRIES}...[/yellow]", end="")
-            time.sleep(RETRY_DELAY)
+            console.print(f"\r[yellow]⚠ Connection error, retry {retry_count}/{MAX_RETRIES} in {delay}s...[/yellow]", end="")
+            time.sleep(delay)
         except Exception as e:
             # Non-recoverable error, fail immediately
             console.print(f"\n[red]✖ Request failed: {str(e)}[/red]")
