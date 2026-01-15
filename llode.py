@@ -1568,7 +1568,7 @@ def stream_response(
     console: Console,
     planning_mode: bool = False
 ) -> str:
-    """Stream response from API and handle tool calls."""
+    """Stream response from API and handle tool calls with retry logic."""
     
     url = f"{base_url}/chat/completions"
     headers = {
@@ -1588,12 +1588,34 @@ def stream_response(
     parser = MIMEToolCallParser()
     display_buffer = ""
     first_content_received = False
+    retry_count = 0
     
     # Show initial "waiting" indicator
     console.print("[dim]⏳ Waiting for response...[/dim]", end="")
     
-    response = requests.post(url, headers=headers, json=data, stream=True)
-    response.raise_for_status()
+    # Retry loop for recoverable errors
+    while retry_count <= MAX_RETRIES:
+        try:
+            response = requests.post(url, headers=headers, json=data, stream=True, timeout=60)
+            response.raise_for_status()
+            break  # Success, exit retry loop
+        except tuple(err[0] for err in RECOVERABLE_ERRORS) as e:
+            retry_count += 1
+            if retry_count > MAX_RETRIES:
+                console.print(f"\n[red]✖ Connection failed after {MAX_RETRIES} retries: {str(e)}[/red]")
+                raise
+            # Show retry counter on same line
+            console.print(f"\r[yellow]⚠ Connection error, retry {retry_count}/{MAX_RETRIES}...[/yellow]", end="")
+            time.sleep(RETRY_DELAY)
+        except Exception as e:
+            # Non-recoverable error, fail immediately
+            console.print(f"\n[red]✖ Request failed: {str(e)}[/red]")
+            raise
+    
+    # Clear retry message if it was shown
+    if retry_count > 0:
+        console.print("\r" + " " * 60 + "\r", end="")
+        console.print("[dim]⏳ Waiting for response...[/dim]", end="")
     
     with Live("", console=console, refresh_per_second=10) as live:
         for line in response.iter_lines():
