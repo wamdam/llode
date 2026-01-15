@@ -173,51 +173,51 @@ LLODE uses Claude's tool-calling capabilities to provide the AI assistant with a
 
 ### Plugin System
 
-LLODE features a powerful plugin architecture that allows extending functionality with custom tools. Plugins are first-class citizens that integrate seamlessly with the core system.
+LLODE features a powerful plugin architecture that allows extending functionality with custom tools. Tool modules are first-class citizens that integrate seamlessly with the core system.
 
-#### How Plugins Work
+#### How Tool Modules Work
 
-1. **Discovery**: At startup, LLODE scans the `plugins/` directory for all `.py` files (excluding files starting with `_`)
-2. **Loading**: Each plugin module is loaded dynamically using Python's `importlib`
-3. **Context Injection**: Core functions (`validate_path`, `get_gitignore_spec`, `walk_files`, `is_dotfile`) are injected into plugin modules before execution
-4. **Registration**: Plugins call `registry.register(name, description)` to add tools using the same `ToolRegistry` API as core tools
-5. **Integration**: Plugin tools appear in the system prompt and are available to the LLM just like built-in tools
-6. **Error Handling**: Failed plugins are reported with full tracebacks but don't prevent LLODE from starting
+1. **Discovery**: At startup, LLODE scans the `tools/` directory for all `.py` files (excluding files starting with `_`)
+2. **Loading**: Each tool module is loaded dynamically using Python's `importlib`
+3. **Context Injection**: Core functions (`validate_path`, `get_gitignore_spec`, `walk_files`, `is_dotfile`) are injected into tool modules before execution
+4. **Registration**: Tools call `registry.register(name, description)` to add functionality using the same `ToolRegistry` API as core tools
+5. **Integration**: Tool functions appear in the system prompt and are available to the LLM just like built-in tools
+6. **Error Handling**: Failed tool modules are reported with full tracebacks but don't prevent LLODE from starting
 
 #### Plugin Architecture
 
 **PluginManager** (`llode.py`):
-- Discovers plugins in the `plugins/` directory relative to `llode.py` (not the project directory)
-- Manages plugin lifecycle (loading, error tracking, status reporting)
-- Injects context (core utility functions) into plugin modules
-- Tracks loaded plugins and their metadata
+- Discovers tool modules in the `tools/` directory relative to `llode.py` (not the project directory)
+- Manages tool module lifecycle (loading, error tracking, status reporting)
+- Injects context (core utility functions) into tool modules
+- Tracks loaded tool modules and their metadata
 
 **ToolRegistry**:
-- Centralized registry for all tools (core and plugin)
+- Centralized registry for all tools (core and tool modules)
 - Generates tool descriptions for the LLM system prompt
 - Provides decorator pattern for clean tool registration
 
-**Plugin Requirements**:
+**Tool Module Requirements**:
 - Must define `register_tools(registry, git_root)` function
 - Should include module docstring (shown in `/plugins` command)
 - Must return strings from tool functions (for LLM consumption)
 - Should handle errors gracefully and validate inputs
 
-#### Plugin Features
+#### Tool Module Features
 
-- **Access to Core Utilities**: Plugins can use `validate_path()`, `get_gitignore_spec()`, `walk_files()`, and `is_dotfile()` functions
-- **Project Awareness**: Plugins receive `git_root` parameter to work within the project context
-- **Status Reporting**: Use `/plugins` command to see loaded plugins and any errors
-- **Hot Description Updates**: Plugin tool descriptions are included in the system prompt generation
+- **Access to Core Utilities**: Tool modules can use `validate_path()`, `get_gitignore_spec()`, `walk_files()`, and `is_dotfile()` functions
+- **Project Awareness**: Tool modules receive `git_root` parameter to work within the project context
+- **Status Reporting**: Use `/plugins` command to see loaded tool modules and any errors
+- **Hot Description Updates**: Tool descriptions are included in the system prompt generation
 
-#### Creating Plugins
+#### Creating Tool Modules
 
-See `plugins/README.md` for detailed documentation and `plugins/EXAMPLE_PLUGIN.md` for step-by-step tutorials.
+See `tools/README.md` for detailed documentation and `tools/EXAMPLE_TOOL.md` for step-by-step tutorials.
 
-Basic plugin structure:
+Basic tool module structure:
 ```python
 """
-Plugin description (shown in /plugins command).
+Tool module description (shown in /plugins command).
 """
 
 def register_tools(registry, git_root):
@@ -232,18 +232,32 @@ def register_tools(registry, git_root):
         return "result"
 ```
 
-#### Included Plugins
+#### Included Tool Modules
 
 - **`codebase_index.py`**: Semantic code understanding and search for Python projects
   - Tools: `index_codebase`, `find_symbol`, `analyze_dependencies`, `list_symbols`
   - Storage: Creates `.llode/index.db` SQLite database
   - Dependencies: None (uses stdlib only)
 
-#### Plugin Storage
+- **`document_conversion.py`**: Document format conversion
+  - Tools: `convert_to_markdown`, `convert_from_markdown`
+  - Dependencies: pandoc, poppler-utils
 
-Plugins should store persistent data in `.llode/` directory:
-- Example: `.llode/plugin_name.db` for SQLite databases
-- Example: `.llode/plugin_name/` for file-based storage
+- **`git_operations.py`**: Git version control operations
+  - Tools: `git_add`, `git_commit`, `git_diff`
+
+- **`todo_manager.py`**: Task list management
+  - Tools: `todo_read`, `todo_write`
+  - Storage: Uses `llode_todo.json` in project root
+
+- **`web_tools.py`**: Web content fetching
+  - Tools: `fetch_url`
+
+#### Tool Storage
+
+Tool modules should store persistent data in `.llode/` directory:
+- Example: `.llode/tool_name.db` for SQLite databases
+- Example: `.llode/tool_name/` for file-based storage
 - The `.llode/` directory is automatically created if needed
 
 ### Token Budget Management
