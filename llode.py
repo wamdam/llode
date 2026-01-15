@@ -1672,6 +1672,8 @@ def main():
                        help="Maximum context tokens")
     parser.add_argument("--list-models", action="store_true",
                        help="List available models")
+    parser.add_argument("-p", "--prompt", type=str,
+                       help="Execute a single prompt and exit")
     
     args = parser.parse_args()
     
@@ -1697,10 +1699,6 @@ def main():
         sys.exit(1)
     
     console = Console()
-    console.print(f"[bold green]LLM CLI Coding Assistant[/bold green]")
-    console.print(f"[dim]Model: {args.model}[/dim]")
-    console.print(f"[dim]Project root: {GIT_ROOT}[/dim]")
-    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /quit[/dim]\n")
     
     # Initialize
     log_session_start()
@@ -1708,6 +1706,32 @@ def main():
     current_model = args.model
     system_prompt = tools.get_system_prompt(planning_mode)
     messages = [{"role": "system", "content": system_prompt}]
+    
+    # Handle single prompt mode
+    if args.prompt:
+        log_conversation("user", args.prompt)
+        messages.append({"role": "user", "content": args.prompt})
+        
+        console.print(f"[bold blue]Assistant:[/bold blue]\n")
+        
+        response = stream_response(
+            messages,
+            args.base_url,
+            args.api_key,
+            current_model,
+            console,
+            planning_mode
+        )
+        
+        log_conversation("assistant", response)
+        console.print()  # Final newline
+        sys.exit(0)
+    
+    # Interactive mode
+    console.print(f"[bold green]LLM CLI Coding Assistant[/bold green]")
+    console.print(f"[dim]Model: {args.model}[/dim]")
+    console.print(f"[dim]Project root: {GIT_ROOT}[/dim]")
+    console.print("[dim]Commands: /help, /clear, /model, /plan, /multiline, /quit[/dim]\n")
     
     # Setup history
     history_file = Path.home() / ".llode_history"
