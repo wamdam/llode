@@ -74,7 +74,7 @@ class ToolRegistry:
         if planning_mode:
             planning_prefix = """⚠️ PLANNING MODE ACTIVE ⚠️
 
-All file-modifying tools are DISABLED (edit_file, file_move, file_delete, search_replace, git_add, git_commit).
+All file-modifying tools are DISABLED (file_edit, file_move, file_delete, search_replace, git_add, git_commit).
 Focus on planning, analysis, and read-only operations.
 
 """
@@ -99,12 +99,12 @@ PROJECT-SPECIFIC INSTRUCTIONS:
         git_workflow = """
 GIT WORKFLOW - MANDATORY:
 
-After ANY successful file modification (edit_file, file_move, file_delete, search_replace):
+After ANY successful file modification (file_edit, file_move, file_delete, search_replace):
 1. Use git_add to stage the changed files
 2. Use git_commit with a descriptive message
 
 Example workflow:
-- edit_file() → git_add() → git_commit()
+- file_edit() → git_add() → git_commit()
 - file_move() → git_add() → git_commit()
 - search_replace() → git_add() → git_commit()
 
@@ -117,7 +117,7 @@ DOCUMENT CONVERSION WORKFLOW:
 
 For non-plaintext documents (docx, odt, rtf, html, epub, pdf):
 1. Use convert_to_markdown(path="document.docx") to create document.docx.md
-2. Use read_file or edit_file on the .md version
+2. Use file_read or file_edit on the .md version
 3. Optionally use convert_from_markdown to convert back to original format
 
 The system will automatically suggest conversion when you try to read binary files.
@@ -170,7 +170,7 @@ Boundary-ID: abc123
 --abc123
 Content-Disposition: param; name="tool_name"
 
-read_file
+file_read
 --abc123
 Content-Disposition: param; name="path"
 
@@ -186,7 +186,7 @@ Boundary-ID: abc124
 --abc124
 Content-Disposition: param; name="tool_name"
 
-read_file
+file_read
 --abc124
 Content-Disposition: param; name="path"
 
@@ -210,7 +210,7 @@ Boundary-ID: abc125
 --abc125
 Content-Disposition: param; name="tool_name"
 
-read_file
+file_read
 --abc125
 Content-Disposition: param; name="path"
 
@@ -230,7 +230,7 @@ Boundary-ID: xyz789
 --xyz789
 Content-Disposition: param; name="tool_name"
 
-edit_file
+file_edit
 --xyz789
 Content-Disposition: param; name="path"
 
@@ -256,7 +256,7 @@ Boundary-ID: new456
 --new456
 Content-Disposition: param; name="tool_name"
 
-edit_file
+file_edit
 --new456
 Content-Disposition: param; name="path"
 
@@ -277,7 +277,7 @@ Boundary-ID: list99
 --list99
 Content-Disposition: param; name="tool_name"
 
-list_files
+file_list
 --list99--
 --TOOL_CALL_END
 
@@ -471,16 +471,16 @@ def walk_files(gitignore_spec: Optional[pathspec.PathSpec]) -> List[Path]:
     return sorted(files)
 
 
-@tools.register("list_files", """Lists all files in the project directory recursively.
+@tools.register("file_list", """Lists all files in the project directory recursively.
 
 Returns a list of all files, excluding those in .gitignore and dotfiles.""")
-def list_files() -> str:
+def file_list() -> str:
     """List all files in the git root directory, respecting .gitignore."""
     files = walk_files(get_gitignore_spec())
     return "\n".join(str(f) for f in files) if files else "(no files found)"
 
 
-@tools.register("read_file", """Reads the contents of a file.
+@tools.register("file_read", """Reads the contents of a file.
 
 Parameters:
 - path: relative path to the file
@@ -488,7 +488,7 @@ Parameters:
 - end_line: optional ending line number (1-indexed, inclusive)
 
 Returns the file contents or specified line range.""")
-def read_file(path: str, start_line: str = None, end_line: str = None) -> str:
+def file_read(path: str, start_line: str = None, end_line: str = None) -> str:
     """Read the contents of a file, optionally within a line range."""
     file_path = validate_path(path)
     if not file_path.exists():
@@ -551,7 +551,7 @@ def read_file(path: str, start_line: str = None, end_line: str = None) -> str:
         raise ValueError(f"Invalid line range: {str(e)}")
 
 
-@tools.register("edit_file", """Edits a file by replacing old_str with new_str, OR creates/overwrites a file.
+@tools.register("file_edit", """Edits a file by replacing old_str with new_str, OR creates/overwrites a file.
 
 Parameters:
 - path: relative path to the file (required)
@@ -563,7 +563,7 @@ BEHAVIOR:
 - If old_str is provided: Searches for exact match and replaces with new_str
 
 The old_str must match EXACTLY including all whitespace and newlines when provided.""")
-def edit_file(path: str, new_str: str, old_str: str = None) -> str:
+def file_edit(path: str, new_str: str, old_str: str = None) -> str:
     """Edit a file by replacing old_str with new_str, or create/overwrite if old_str not provided."""
     file_path = validate_path(path)
     
@@ -720,7 +720,7 @@ def convert_to_markdown(path: str) -> str:
     if output_path.exists():
         return (
             f"⚠️  Markdown file already exists: {output_path.relative_to(GIT_ROOT)}\n"
-            f"Use read_file to view it, or delete it first if you want to reconvert."
+            f"Use file_read to view it, or delete it first if you want to reconvert."
         )
     
     # Check if this is a PDF file
@@ -759,7 +759,7 @@ def convert_to_markdown(path: str) -> str:
                 f"✓ Successfully converted PDF to markdown:\n"
                 f"  Input:  {path} ({original_size:,} bytes)\n"
                 f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
-                f"You can now use read_file or edit_file on: {rel_output}"
+                f"You can now use file_read or file_edit on: {rel_output}"
             )
             
         except subprocess.TimeoutExpired:
@@ -801,7 +801,7 @@ def convert_to_markdown(path: str) -> str:
                 f"✓ Successfully converted to markdown:\n"
                 f"  Input:  {path} ({original_size:,} bytes)\n"
                 f"  Output: {rel_output} ({markdown_size:,} bytes)\n\n"
-                f"You can now use read_file or edit_file on: {rel_output}"
+                f"You can now use file_read or file_edit on: {rel_output}"
             )
             
         except subprocess.TimeoutExpired:
@@ -1366,7 +1366,7 @@ def parse_mime_tool_call(tool_content: str) -> Tuple[str, Dict[str, str]]:
 def format_tool_output_for_display(tool_name: str, result: str, args: Dict) -> str:
     """Format tool output for concise display."""
     
-    if tool_name == "read_file":
+    if tool_name == "file_read":
         lines = result.splitlines()
         total_lines = len(lines)
         path = args.get('path', 'file')
@@ -1378,13 +1378,13 @@ def format_tool_output_for_display(tool_name: str, result: str, args: Dict) -> s
             foot = "\n".join(lines[-25:])
             return f"```\n{head}\n\n... ({total_lines - 50} lines omitted) ...\n\n{foot}\n```\n({total_lines} lines total)"
     
-    elif tool_name == "edit_file":
+    elif tool_name == "file_edit":
         lines = result.splitlines()
         additions = sum(1 for line in lines if line.startswith('+') and not line.startswith('+++'))
         deletions = sum(1 for line in lines if line.startswith('-') and not line.startswith('---'))
         return f"```diff\n{result}\n```\n(+{additions} -{deletions})"
     
-    elif tool_name == "list_files":
+    elif tool_name == "file_list":
         lines = result.splitlines()
         total_files = len(lines)
         
@@ -1418,7 +1418,7 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
         tool_name, tool_args = parse_mime_tool_call(tool_content)
         
         # Block all modifying tools in planning mode
-        modifying_tools = ["edit_file", "file_move", "file_delete", "search_replace", "git_add", "git_commit"]
+        modifying_tools = ["file_edit", "file_move", "file_delete", "search_replace", "git_add", "git_commit"]
         if planning_mode and tool_name in modifying_tools:
             result = f"❌ {tool_name} is disabled in planning mode. Use /plan to toggle planning mode."
             console.print(f"[red]{result}[/red]\n")
@@ -1426,9 +1426,9 @@ def execute_tool(tool_content: str, console: Console, planning_mode: bool = Fals
         
         # Build a descriptive status message
         status_msg = f"🔧 {tool_name}"
-        if tool_name == "read_file" and "path" in tool_args:
+        if tool_name == "file_read" and "path" in tool_args:
             status_msg += f" → {tool_args['path']}"
-        elif tool_name == "edit_file" and "path" in tool_args:
+        elif tool_name == "file_edit" and "path" in tool_args:
             status_msg += f" → {tool_args['path']}"
         elif tool_name == "search_codebase" and "search_term" in tool_args:
             status_msg += f" → '{tool_args['search_term']}'"
