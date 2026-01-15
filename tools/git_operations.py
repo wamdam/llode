@@ -28,7 +28,18 @@ def register_tools(registry, git_root):
 Parameters:
 - paths: file paths to add (can be a single path or multiple comma-separated paths)
 
-Adds the specified files to git staging area, ready for commit.""")
+Adds the specified files to git staging area, ready for commit.
+
+WORKFLOW: After ANY successful file modification (file_edit, file_move, file_delete, search_replace):
+1. Use git_add to stage the changed files
+2. Use git_commit with a descriptive message
+
+Example workflow:
+- file_edit() → git_add() → git_commit()
+- file_move() → git_add() → git_commit()
+- search_replace() → git_add() → git_commit()
+
+This ensures all changes are tracked and can be reverted if needed.""")
     def git_add(paths: str) -> str:
         """Add files to git staging area."""
         # Parse paths (can be comma-separated)
