@@ -39,7 +39,23 @@ Example workflow:
 - file_move() → git_add() → git_commit()
 - search_replace() → git_add() → git_commit()
 
-This ensures all changes are tracked and can be reverted if needed.""")
+This ensures all changes are tracked and can be reverted if needed.
+
+EXAMPLE:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: git001
+
+--git001
+Content-Disposition: param; name="tool_name"
+
+git_add
+--git001
+Content-Disposition: param; name="paths"
+
+src/main.py, src/config.py
+--git001--
+--TOOL_CALL_END""")
     def git_add(paths: str) -> str:
         """Add files to git staging area."""
         # Parse paths (can be comma-separated)
@@ -86,7 +102,23 @@ Parameters:
 
 Creates a git commit with the currently staged files.
 All commits are automatically prefixed with [llode] for tracking.
-Returns the commit hash and summary.""")
+Returns the commit hash and summary.
+
+EXAMPLE:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: git002
+
+--git002
+Content-Disposition: param; name="tool_name"
+
+git_commit
+--git002
+Content-Disposition: param; name="message"
+
+Add user authentication feature
+--git002--
+--TOOL_CALL_END""")
     def git_commit(message: str) -> str:
         """Create a git commit with staged changes."""
         if not message or not message.strip():

@@ -200,7 +200,27 @@ Parameters:
 - destination: destination file path
 
 Moves/renames a file from source to destination.
-Creates parent directories if needed.""")
+Creates parent directories if needed.
+
+EXAMPLE:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: move01
+
+--move01
+Content-Disposition: param; name="tool_name"
+
+file_move
+--move01
+Content-Disposition: param; name="source"
+
+old_location/file.py
+--move01
+Content-Disposition: param; name="destination"
+
+new_location/file.py
+--move01--
+--TOOL_CALL_END""")
     def file_move(source: str, destination: str) -> str:
         """Move or rename a file."""
         try:
@@ -258,7 +278,31 @@ Parameters:
 - case_sensitive: whether to match case (default: true)
 
 Searches for text across files and replaces all occurrences.
-Returns summary of changes made.""")
+Returns summary of changes made.
+
+EXAMPLE:
+--TOOL_CALL_BEGIN
+Content-Type: tool-call
+Boundary-ID: search01
+
+--search01
+Content-Disposition: param; name="tool_name"
+
+search_replace
+--search01
+Content-Disposition: param; name="search_term"
+
+old_function_name
+--search01
+Content-Disposition: param; name="replace_term"
+
+new_function_name
+--search01
+Content-Disposition: param; name="file_pattern"
+
+*.py
+--search01--
+--TOOL_CALL_END""")
     def search_replace(search_term: str, replace_term: str, file_pattern: str = "*", case_sensitive: str = "true") -> str:
         """Search and replace text across multiple files."""
         if not search_term:

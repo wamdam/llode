@@ -144,7 +144,7 @@ PROJECT-SPECIFIC INSTRUCTIONS:
 
 CONTEXT WINDOW: Do not worry about token limits or context window size. The system automatically manages conversation history and will truncate old messages when needed. Focus on providing complete, helpful responses without self-censoring due to length concerns.
 
-{plugin_section}{local_prompt}IMPORTANT: Use tools with this EXACT MIME-style boundary format:
+{plugin_section}{local_prompt}TOOL USAGE: Use tools with this EXACT MIME-style boundary format:
 
 TOOL CALL FORMAT:
 --TOOL_CALL_BEGIN
@@ -175,204 +175,14 @@ RULES:
 6. For editing: old_str must match EXACTLY (every space, tab, newline)
 7. For creating/overwriting: omit the old_str parameter entirely
 8. All file paths are relative to the project root
-9. Do not access dotfiles
+9. Do not access dotfiles (except .gitignore which is allowed)
 
 NESTING: If you need to show example tool calls in your content, use a DIFFERENT
 boundary ID than the outer tool call. The parser handles nesting automatically.
 
-EXAMPLE - Reading a file:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: abc123
+See tool descriptions below for detailed usage examples and workflows.
 
---abc123
-Content-Disposition: param; name="tool_name"
-
-file_read
---abc123
-Content-Disposition: param; name="path"
-
-src/main.py
---abc123--
---TOOL_CALL_END
-
-EXAMPLE - Reading specific lines from a file:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: abc124
-
---abc124
-Content-Disposition: param; name="tool_name"
-
-file_read
---abc124
-Content-Disposition: param; name="path"
-
-src/main.py
---abc124
-Content-Disposition: param; name="start_line"
-
-10
---abc124
-Content-Disposition: param; name="end_line"
-
-50
---abc124--
---TOOL_CALL_END
-
-EXAMPLE - Reading from a starting line to end of file:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: abc125
-
---abc125
-Content-Disposition: param; name="tool_name"
-
-file_read
---abc125
-Content-Disposition: param; name="path"
-
-src/main.py
---abc125
-Content-Disposition: param; name="start_line"
-
-100
---abc125--
---TOOL_CALL_END
-
-EXAMPLE - Editing a file:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: xyz789
-
---xyz789
-Content-Disposition: param; name="tool_name"
-
-file_edit
---xyz789
-Content-Disposition: param; name="path"
-
-config.py
---xyz789
-Content-Disposition: param; name="old_str"
-
-def hello():
-    print("Hello")
---xyz789
-Content-Disposition: param; name="new_str"
-
-def hello(name="World"):
-    print(f"Hello, {{name}}!")
---xyz789--
---TOOL_CALL_END
-
-EXAMPLE - Creating/overwriting a file (omit old_str parameter):
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: new456
-
---new456
-Content-Disposition: param; name="tool_name"
-
-file_edit
---new456
-Content-Disposition: param; name="path"
-
-new_file.py
---new456
-Content-Disposition: param; name="new_str"
-
-#!/usr/bin/env python3
-print("New file!")
---new456--
---TOOL_CALL_END
-
-EXAMPLE - Tool with no parameters:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: list99
-
---list99
-Content-Disposition: param; name="tool_name"
-
-file_list
---list99--
---TOOL_CALL_END
-
-EXAMPLE - Git workflow (stage and commit):
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: git001
-
---git001
-Content-Disposition: param; name="tool_name"
-
-git_add
---git001
-Content-Disposition: param; name="paths"
-
-src/main.py, src/config.py
---git001--
---TOOL_CALL_END
-
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: git002
-
---git002
-Content-Disposition: param; name="tool_name"
-
-git_commit
---git002
-Content-Disposition: param; name="message"
-
-Add user authentication feature
---git002--
---TOOL_CALL_END
-
-EXAMPLE - Moving a file:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: move01
-
---move01
-Content-Disposition: param; name="tool_name"
-
-file_move
---move01
-Content-Disposition: param; name="source"
-
-old_location/file.py
---move01
-Content-Disposition: param; name="destination"
-
-new_location/file.py
---move01--
---TOOL_CALL_END
-
-EXAMPLE - Multi-file search and replace:
---TOOL_CALL_BEGIN
-Content-Type: tool-call
-Boundary-ID: search01
-
---search01
-Content-Disposition: param; name="tool_name"
-
-search_replace
---search01
-Content-Disposition: param; name="search_term"
-
-old_function_name
---search01
-Content-Disposition: param; name="replace_term"
-
-new_function_name
---search01
-Content-Disposition: param; name="file_pattern"
-
-*.py
---search01--
---TOOL_CALL_END
+See tool descriptions below for detailed usage examples and workflows.
 
 VERIFICATION CHECKLIST before sending tool call:
 * Starts with --TOOL_CALL_BEGIN
