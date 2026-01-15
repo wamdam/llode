@@ -5,11 +5,18 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 ## Features
 
 ### 🤖 AI-Powered Coding Assistant
-- Interactive chat interface with all AIs from mammouth.ai (e.g. Sonnet, chatgpt, …)
+- Interactive chat interface with all AIs from mammouth.ai (e.g. Sonnet, ChatGPT, …)
 - Context-aware responses based on your entire codebase
 - Automatic conversation history management with summarization
 
-### 🛠️ File Operations
+### 🔌 Plugin-Based Architecture
+- **Extensible tool system**: Add new capabilities by dropping Python files in `tools/` directory
+- **Six built-in plugins**: File operations, git integration, semantic code search, document conversion, task management, and web tools
+- **Dynamic loading**: Plugins are discovered and loaded automatically at startup
+- **Isolated functionality**: Each plugin is self-contained with its own tools and storage
+- **Use `/plugins` command**: View loaded plugins and their status
+
+### 🛠️ File Operations (via `file_operations` plugin)
 - **List Files**: Recursively browse project directory structure
 - **Read Files**: View file contents with optional line ranges and automatic gitignore respect
 - **Edit Files**: AI can modify files with precise search-and-replace operations
@@ -17,35 +24,38 @@ LLODE (Large Language Model Optimized Development Environment) is an AI-powered 
 - **Move/Rename Files**: Relocate or rename files with automatic directory creation
 - **Delete Files**: Remove files safely with git tracking
 - **Search & Replace**: Multi-file search and replace across your codebase
-- **Document Conversion**: Convert between document formats (docx, odt, rtf, html, epub, pdf) and markdown using Pandoc
 
-### 🔄 Git Integration
+### 🔍 Semantic Code Search (via `codebase_index` plugin)
+- **Symbol Search**: Find function and class definitions instantly
+- **Reference Tracking**: See where symbols are used across the codebase
+- **Dependency Analysis**: Understand import relationships between files
+- **Symbol Listing**: Browse all functions/classes in files or by pattern
+- **Fast Indexing**: SQLite-based index stored in `.llode/codebase_index.db`
+- **Python Support**: Analyzes Python codebases (extensible to other languages)
+
+### 🔄 Git Integration (via `git_operations` plugin)
 - **Automatic Staging**: Files are automatically staged after modifications
-- **Smart Commits**: AI creates meaningful commit messages for changes (automatically prefixed with `[llode]`)
+- **Smart Commits**: AI creates meaningful commit messages (automatically prefixed with `[llode]`)
 - **Diff Viewing**: Review staged and unstaged changes
-- **Git Workflow**: Seamless integration with version control
 - **Change Tracking**: All file operations are tracked in git history
 - **Undo/Redo**: Revert commits using `/undo` command with git-native revert operations
 
-### 🔍 Code Search & Semantic Understanding
-- **Text Search**: Full-text search across your entire codebase
-- **Semantic Search**: Find symbols (functions, classes) by name
-- **Dependency Analysis**: Understand import relationships
-- **Symbol Listing**: Browse all functions/classes in files
-- Case-sensitive and case-insensitive search options
-- Respects `.gitignore` patterns
-- Excludes dotfiles automatically
-- Stays in the project directory
+### 📄 Document Conversion (via `document_conversion` plugin)
+- **To Markdown**: Convert documents (DOCX, ODT, RTF, HTML, EPUB, PDF) to markdown
+- **From Markdown**: Convert markdown back to various formats
+- **Automatic Handling**: System suggests conversion when reading binary formats
+- **Workflow**: Convert → Edit → Convert back (optional)
 
-### 📋 Task Management
-- Built-in todo list system (`LLODE_TODO.json`)
+### 📋 Task Management (via `todo_manager` plugin)
+- Built-in todo list system stored in `.llode/todo.json`
 - Track progress on complex multi-step tasks
-- Priority-based task organization
-- Persistent task storage across sessions
+- Task status tracking (pending, in_progress, completed)
+- Persistent storage across sessions
 
-### 🌐 Web Integration
+### 🌐 Web Integration (via `web_tools` plugin)
 - Fetch content from URLs for context
 - Integrate external documentation or resources
+- Supports HTTP and HTTPS
 
 ### 💾 Smart History Management
 - Automatic conversation summarization when approaching token limits
@@ -133,132 +143,115 @@ You: Show me the git diff of my changes
 
 ## How It Works
 
-### Architecture
+### Architecture Overview
 
-LLODE uses Claude's tool-calling capabilities to provide the AI assistant with access to:
+LLODE combines a plugin-based architecture with Claude's tool-calling capabilities to provide an extensible AI coding assistant.
 
-1. **File System Tools**
-   - `file_list`: Browse project structure
-   - `file_read`: Read file contents (with optional line ranges and binary format detection)
-   - `file_edit`: Modify files with exact string matching or create new files
-   - `file_move`: Move or rename files with automatic directory creation
-   - `file_delete`: Delete files safely
-   - `search_replace`: Search and replace text across multiple files
+**Core Components:**
+- **Main Loop** (`llode.py`): Chat interface, command handling, and plugin management
+- **Tool Parser** (`tool_parser.py`): MIME-style boundary format parser for tool calls
+- **API Client** (`api.py`): Claude API integration with streaming responses
+- **Plugin System**: Dynamic plugin discovery and loading from `tools/` directory
 
-2. **Document Conversion Tools** (requires Pandoc)
-   - `convert_to_markdown`: Convert documents (docx, odt, rtf, html, epub, pdf) to markdown
-   - `convert_from_markdown`: Convert markdown back to various formats
+**Plugin Architecture:**
 
-3. **Search Tools**
-   - `search_codebase`: Full-text search with context
+1. **Discovery Phase**: At startup, scans `tools/` directory for Python modules
+2. **Loading Phase**: Each plugin's `register_tools(registry, git_root)` function is called
+3. **Registration**: Plugins register tools with descriptions via the `ToolRegistry`
+4. **Integration**: Tool descriptions are injected into the system prompt for Claude
+5. **Execution**: When Claude calls a tool, the registered function is invoked
 
-4. **Semantic Code Tools** (via plugin)
-   - `index_codebase`: Build semantic index of Python code
-   - `find_symbol`: Find function/class definitions and references
-   - `analyze_dependencies`: Show import relationships
-   - `list_symbols`: Browse all symbols in files
+**Built-in Plugins:**
 
-5. **Web Tools**
-   - `fetch_url`: Retrieve content from URLs
+1. **file_operations** - File system manipulation
+   - `file_list`, `file_read`, `file_edit`, `file_move`, `file_delete`, `search_codebase`, `search_replace`
 
-6. **Task Management Tools**
-   - `todo_read`: View current task list
-   - `todo_write`: Update task list
+2. **codebase_index** - Semantic code analysis (Python)
+   - `index_codebase`, `find_symbol`, `analyze_dependencies`, `list_symbols`
 
-7. **Git Integration Tools**
-   - `git_add`: Stage files for commit
-   - `git_commit`: Create commits with meaningful messages (auto-prefixed with `[llode]`)
-   - `git_diff`: View staged and unstaged changes
-   - `/undo` command: Revert commits using git revert
+3. **git_operations** - Version control integration
+   - `git_add`, `git_commit`, `git_diff`
 
-### Plugin System
+4. **document_conversion** - Format conversion (requires Pandoc)
+   - `convert_to_markdown`, `convert_from_markdown`
 
-LLODE features a powerful plugin architecture that allows extending functionality with custom tools. Tool modules are first-class citizens that integrate seamlessly with the core system.
+5. **todo_manager** - Task tracking
+   - `todo_read`, `todo_write`
 
-#### How Tool Modules Work
+6. **web_tools** - Web content fetching
+   - `fetch_url`
 
-1. **Discovery**: At startup, LLODE scans the `tools/` directory for all `.py` files (excluding files starting with `_`)
-2. **Loading**: Each tool module is loaded dynamically using Python's `importlib`
-3. **Context Injection**: Core functions (`validate_path`, `get_gitignore_spec`, `walk_files`, `is_dotfile`) are injected into tool modules before execution
-4. **Registration**: Tools call `registry.register(name, description)` to add functionality using the same `ToolRegistry` API as core tools
-5. **Integration**: Tool functions appear in the system prompt and are available to the LLM just like built-in tools
-6. **Error Handling**: Failed tool modules are reported with full tracebacks but don't prevent LLODE from starting
+### Creating Custom Plugins
 
-#### Plugin Architecture
+LLODE's plugin system makes it easy to add new functionality. Plugins are simply Python files placed in the `tools/` directory.
 
-**PluginManager** (`llode.py`):
-- Discovers tool modules in the `tools/` directory relative to `llode.py` (not the project directory)
-- Manages tool module lifecycle (loading, error tracking, status reporting)
-- Injects context (core utility functions) into tool modules
-- Tracks loaded tool modules and their metadata
+#### Quick Start
 
-**ToolRegistry**:
-- Centralized registry for all tools (core and tool modules)
-- Generates tool descriptions for the LLM system prompt
-- Provides decorator pattern for clean tool registration
+1. Create a new `.py` file in the `tools/` directory
+2. Define a `register_tools(registry, git_root)` function
+3. Use `@registry.register()` decorator to add tools
+4. Restart LLODE to load the new plugin
 
-**Tool Module Requirements**:
-- Must define `register_tools(registry, git_root)` function
-- Should include module docstring (shown in `/plugins` command)
-- Must return strings from tool functions (for LLM consumption)
-- Should handle errors gracefully and validate inputs
+#### Example Plugin
 
-#### Tool Module Features
-
-- **Access to Core Utilities**: Tool modules can use `validate_path()`, `get_gitignore_spec()`, `walk_files()`, and `is_dotfile()` functions
-- **Project Awareness**: Tool modules receive `git_root` parameter to work within the project context
-- **Status Reporting**: Use `/plugins` command to see loaded tool modules and any errors
-- **Hot Description Updates**: Tool descriptions are included in the system prompt generation
-
-#### Creating Tool Modules
-
-See `tools/README.md` for detailed documentation and `tools/EXAMPLE_TOOL.md` for step-by-step tutorials.
-
-Basic tool module structure:
 ```python
 """
-Tool module description (shown in /plugins command).
+My custom tool - does something useful.
 """
 
 def register_tools(registry, git_root):
-    @registry.register("my_tool", """Tool description for LLM.
+    @registry.register("my_tool", """
+    Description of what this tool does.
     
     Parameters:
-    - param: description
+    - param1: description of param1
+    - param2: description of param2
     
-    Returns what the tool does.""")
-    def my_tool(param: str):
-        # Implementation
-        return "result"
+    Returns information about what was done.
+    """)
+    def my_tool(param1: str, param2: str = "default"):
+        # Your implementation here
+        result = f"Processed {param1} with {param2}"
+        return result
 ```
 
-#### Included Tool Modules
+#### Plugin Features
 
-- **`codebase_index.py`**: Semantic code understanding and search for Python projects
-  - Tools: `index_codebase`, `find_symbol`, `analyze_dependencies`, `list_symbols`
-  - Storage: Creates `.llode/index.db` SQLite database
-  - Dependencies: None (uses stdlib only)
+- **Automatic Discovery**: Drop Python files in `tools/` directory, no registration needed
+- **Core Utilities**: Access `validate_path()`, `get_gitignore_spec()`, `walk_files()`, `is_dotfile()`
+- **Project Context**: Receive `git_root` parameter to work within project boundaries
+- **Error Isolation**: Plugin failures don't crash LLODE
+- **Status Reporting**: Use `/plugins` command to see loaded plugins and any errors
 
-- **`document_conversion.py`**: Document format conversion
-  - Tools: `convert_to_markdown`, `convert_from_markdown`
-  - Dependencies: pandoc, poppler-utils
+#### Plugin Requirements
 
-- **`git_operations.py`**: Git version control operations
-  - Tools: `git_add`, `git_commit`, `git_diff`
+- Must define `register_tools(registry, git_root)` function
+- Should include module docstring (shown in `/plugins` command)
+- Tool functions must return strings (for LLM to read)
+- Use `validate_path()` to check file paths are within project
+- Handle errors gracefully with try/except blocks
 
-- **`todo_manager.py`**: Task list management
-  - Tools: `todo_read`, `todo_write`
-  - Storage: Uses `llode_todo.json` in project root
+#### Plugin Storage
 
-- **`web_tools.py`**: Web content fetching
-  - Tools: `fetch_url`
+Plugins can store persistent data in the `.llode/` directory:
+```python
+import os
+import json
 
-#### Tool Storage
+def register_tools(registry, git_root):
+    storage_dir = os.path.join(git_root, ".llode")
+    os.makedirs(storage_dir, exist_ok=True)
+    
+    db_path = os.path.join(storage_dir, "my_plugin.db")
+    # Use db_path for SQLite or other storage
+```
 
-Tool modules should store persistent data in `.llode/` directory:
-- Example: `.llode/tool_name.db` for SQLite databases
-- Example: `.llode/tool_name/` for file-based storage
-- The `.llode/` directory is automatically created if needed
+Examples:
+- `.llode/codebase_index.db` - SQLite database for code indexing
+- `.llode/todo.json` - JSON file for task management
+- `.llode/my_plugin/` - Directory for file-based storage
+
+The `.llode/` directory is automatically created and is git-ignored by default.
 
 ### Token Budget Management
 
